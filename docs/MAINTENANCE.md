@@ -16,6 +16,7 @@
 
 | 现象 | 可能原因 | 处理方法 |
 |---|---|---|
+| push 了新代码，但线上还是旧的（新功能没出现） | Cloudflare 没有收到 GitHub 的通知；或有人在 Edit code 按了 Deploy，把旧代码重新部署 | 见下面“确认线上是最新代码” |
 | 发了消息，**完全没有 Bark 通知** | 开头不是五个关键词之一（例如写成 `Booking rescheduled`），或关键词不在消息最开头 | 改用已保存的回复重发 |
 | 同上 | Meta 没有推送给 Worker | 检查 Meta App 的 Webhooks 是否还订阅了 `message_echoes`；回调网址是不是这个 Worker；App 是否还是 Live |
 | 同上 | Bark 本身有问题 | 用浏览器打开 `https://api.day.app/<key>/测试`，看手机收不收得到 |
@@ -24,7 +25,7 @@
 | `iCloud error 5xx` | iCloud 暂时出问题 | 过几分钟重发，或先手动改日历 |
 | `The event was changed on another device at the same moment` | 你刚好在 iPhone 上改同一个事件 | 重发一次 |
 | 通知标题是 `Customer` 而不是客人名字 | 两种查名字的方法都失败：`PAGE_ACCESS_TOKEN` 失效或权限不足 | 看 Worker 日志里 `name via …failed` 的错误；临时可以在模板加 `Name:` 行；必要时重新生成专页访问令牌 |
-| 点通知或日历里的链接打不开对话 | `LINK_TEMPLATE` 格式不对，或 Facebook 改了网址格式 | 重新复制一个对话网址，按 SETUP.md 的说明更新模板 |
+| 客人卡片的“打开收件箱”打开的是 Safari 网页而不是 App | iPhone 没有把这个网址交给 Business Suite App | 在 Cloudflare 加 `INBOX_URL`，换成能打开 App 的网址 |
 | `Couldn't read the date / time` | 自己写的 `Time:` 看不懂 | 改成 `Friday 30/10 10am` 这类写法重发 |
 | `AI couldn't read the chat: …` | AI 服务出问题：额度用完、API Key 失效、服务暂时故障 | 看后面的原因。额度用完到 console.anthropic.com 充值；key 失效就新建一个更新 `ANTHROPIC_API_KEY`。暂时可以用 `Booked you in` / `Booking change` 手写资料 |
 | `Facebook: couldn't read the messages` | 读不到对话：`PAGE_ACCESS_TOKEN` 失效或权限变了 | 重新生成专页访问令牌；暂时用 `Booked you in` / `Booking change` |
@@ -75,7 +76,7 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
    git commit -m "说明这次改了什么"
    git push
    ```
-5. Cloudflare 会自动 Build，状态变成 **Ready** 就生效。
+5. Cloudflare 会自动 Build，状态变成 **Ready** 就生效。**确认这一笔的说明就是你刚才的提交说明**（见下面“确认线上是最新代码”）。
 6. 用朋友的对话实际测一次，看 Bark、日历和自动回复。
 
 请 AI 帮忙改代码时，把这个仓库的 `README.md`、`docs/HISTORY.md` 和 `worker.js` 一起给它，它就能了解整个系统的来龙去脉。
@@ -84,7 +85,7 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
 
 | 区块 | 作用 |
 |---|---|
-| `export default { fetch }` | 入口：`/go` 链接中转、`/check` 检查页、Meta webhook 验证与接收 |
+| `export default { fetch }` | 入口：`/c` 客人卡片、`/check` 检查页、`/go` 旧链接中转（只为旧事件保留）、Meta webhook 验证与接收 |
 | `onPageMessage` / `detectAction` | 看消息开头，判断是哪一种操作、要不要用 AI |
 | `doConfirm` / `doUpdate` / `doCancel` | 三种操作的入口；包含“AI 失败时改用消息内容”的后备 |
 | `doConfirmFromChat` / `doUpdateFromChat` | AI 模式：读对话、整理、写日历、自动回复客人 |
@@ -96,7 +97,7 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
 | `parseDate` / `parseWhenParts` / `parseClock` / `buildTimes` | 读懂各种时间写法 |
 | iCloud 日历（CalDAV）区块 | 登录、找日历、查询、写入、修改、删除事件 |
 | iCalendar 区块 | 产生和修改 .ics 事件内容 |
-| Meta / 链接 / Bark 区块 | 查客人名字（查不到就从对话参与者找）、产生对话链接、推送通知 |
+| Meta / 链接 / Bark 区块 | 查客人名字（查不到就从对话参与者找）、客人卡片 `customerCard`、推送通知 |
 
 ### 几个设计上的重点（改代码时不要破坏）
 
@@ -110,6 +111,19 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
 - **AI 用工具调用回传资料**（`tool_choice` 强制使用 `save_booking`），不会回一段自由文字导致解析失败。
 - **你写的栏位永远优先于 AI**；AI 或读对话失败时（`serviceError`），消息里有写栏位就照写的处理。
 - **修改时只套用有变的栏位**：AI 回传的是“现在应该是什么”，程序跟日历上的资料比较后才写入。
+
+## 确认线上是最新代码
+
+曾经发生过：GitHub 上已经是新版本，Cloudflare 的 Build 也显示 Ready，线上跑的却还是旧代码。检查方法：
+
+1. Cloudflare → `fb-booking-andy-auto` → **Edit code**，搜索这次新增的函数或文字。**只看，不要按 Deploy**：在编辑器按 Deploy 会把编辑器里的代码部署上线，覆盖 GitHub 的版本，而且版本列表会显示 “Empty commit message”。
+2. 搜不到的话，看 Deployments 里最新一笔的说明是不是你的提交说明。不是的话，手动触发一次 GitHub 部署：
+   ```bash
+   git commit --allow-empty -m "Trigger deploy"
+   git push
+   ```
+3. 还是不行：Settings → Build 检查 Git 连接、Production branch（`main`）和 Deploy command（`npx wrangler deploy`）。
+4. 应急：把 `worker.js` 的内容贴进 Edit code 按 Deploy（内容要跟 GitHub 上一样）。
 
 ## 回滚
 
@@ -143,6 +157,6 @@ Cloudflare Workers 免费方案、GitHub、Bark、iCloud 日历、Meta API 都�
 3. **Meta API 版本过期**（每个版本约支持两年）→ 在 Cloudflare 加 `GRAPH_VERSION`，填新版本号。
 4. **Meta 的检查邮件**（例如年度数据使用检查）→ 照着完成，不然 App 可能被限制。
 5. **换手机或重装 Bark** → key 可能会变，更新 `BARK_URL`。
-6. **Facebook 改了收件箱网址格式** → 更新 `LINK_TEMPLATE`。
+6. **Business Suite 改了收件箱网址** → 更新 `INBOX_URL`。
 7. **AI 模型下架** → 在 Cloudflare 加 `AI_MODEL`，填新的模型名称。
 8. **苹果改了 iCloud 日历的接口**（可能性很低）→ 代码需要调整。
