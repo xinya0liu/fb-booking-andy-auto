@@ -26,6 +26,7 @@ const CAL = HOME + 'CAL-1/';
 const store = new Map();
 let etagN = 1;
 let barks = [];
+let sentToCustomer = [], echoes = [], aiPrompts = [], sendFails = false, aiReply = {};
 
 const multistatus = x => new Response(`<?xml version="1.0"?><multistatus xmlns="DAV:">${x}</multistatus>`, { status: 207 });
 const xmlEsc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -40,7 +41,31 @@ globalThis.fetch = async (input, opt = {}) => {
     barks.push({ title, body });
     return new Response('ok');
   }
+  if (url.includes('graph.facebook.com/v23.0/me/messages')) {
+    const j = JSON.parse(opt.body);
+    sentToCustomer.push(j);
+    if (sendFails) return Response.json({ error: { message: 'Outside of allowed window' } });
+    // 真实情况下 Meta 会把这条消息回传给 Worker（带 metadata），这里也模拟一次
+    echoes.push({ sender: { id: 'PAGE' }, recipient: j.recipient, message: { is_echo: true, mid: 'echo-' + sentToCustomer.length, text: j.message.text, metadata: j.message.metadata } });
+    return Response.json({ message_id: 'm' });
+  }
+  if (url.includes('/me/conversations') && url.includes('fields=id&')) return Response.json({ data: [{ id: 't_123' }] });
+  if (url.includes('/t_123/messages')) {
+    const now = Date.now();
+    const at = mins => new Date(now - mins * 60000).toISOString().replace('Z', '+0000');
+    return Response.json({ data: [ // Meta 是新的在前
+      { message: 'Booking confirmed', from: { id: 'PAGE' }, created_time: at(0) },
+      { message: 'Sunday 7pm works', from: { id: '111' }, created_time: at(5) },
+      { message: 'Thanks. Address is 3 Molly Court Eagleby, mobile 0438 407 598', from: { id: '111' }, created_time: at(10) },
+      { message: 'It would be $150. Call Andy on 0478 701 289', from: { id: 'PAGE' }, created_time: at(20) },
+      { message: 'Hi, how much for an AC check on a 2015 Mazda 3? Not cold', from: { id: '111' }, created_time: at(30) },
+    ] });
+  }
   if (url.includes('graph.facebook.com')) return Response.json({ first_name: 'Test', last_name: 'Customer' });
+  if (url.startsWith('https://api.anthropic.com/')) {
+    aiPrompts.push(JSON.parse(opt.body).messages[0].content);
+    return Response.json({ content: [{ type: 'text', text: JSON.stringify(aiReply) }] });
+  }
 
   if (h.authorization !== 'Basic ' + btoa(`${USER}:${PASS}`)) return new Response('unauthorized', { status: 401 });
   if (method === 'PROPFIND' && url === 'https://caldav.icloud.com/') {
@@ -80,6 +105,12 @@ const env = {
   LINK_TEMPLATE: 'https://business.facebook.com/latest/inbox/all?selected_item_id={psid}',
 };
 
+async function deliver(messaging) {
+  const jobs = [];
+  const body = { object: 'page', entry: [{ messaging: [messaging] }] };
+  await worker.fetch(new Request('https://worker.test/', { method: 'POST', body: JSON.stringify(body) }), env, { waitUntil: p => jobs.push(p) });
+  await Promise.all(jobs);
+}
 async function send(text, mid, psid = '111') {
   const jobs = [];
   const body = { object: 'page', entry: [{ messaging: [{ sender: { id: 'PAGE' }, recipient: { id: psid }, message: { is_echo: true, mid, text } }] }] };
@@ -193,6 +224,90 @@ Any changes, reply here or call Andy on 0478 701 289. See you then!`;
   const r = await worker.fetch(new Request('https://worker.test/check?token=verify'), { ...env, ICLOUD_APP_PASSWORD: 'wrong' }, {});
   assert.match(await r.text(), /401/);
   ok('密码错误时检查页会显示 401 提示');
+}
+
+// ---------- 一键确认（从对话整理） ----------
+store.clear();
+const aiEnv = { ANTHROPIC_API_KEY: 'test-key' };
+Object.assign(env, aiEnv);
+const nextSunday = (() => {
+  const [y, m, d] = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Brisbane' }).format(new Date()).split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d)); const add = ((7 - t.getUTCDay()) % 7) || 7;
+  const s = new Date(t.getTime() + add * 864e5);
+  return `${s.getUTCFullYear()}-${String(s.getUTCMonth() + 1).padStart(2, '0')}-${String(s.getUTCDate()).padStart(2, '0')}`;
+})();
+
+{
+  barks = []; sentToCustomer = []; echoes = []; aiPrompts = [];
+  aiReply = { date: nextSunday, start: '19:00', end: '', service: 'Car AC check', price: '$150', address: '3 Molly Court Eagleby', mobile: '0438 407 598', vehicle: '2015 Mazda 3', notes: 'AC not cold' };
+  await send('Booking confirmed', 'mid-ai-1');
+  assert.equal(store.size, 1);
+  const e = events()[0];
+  assert.equal(prop(e, 'SUMMARY'), 'Test Customer – Car AC check $150');
+  assert.equal(prop(e, 'LOCATION'), '3 Molly Court Eagleby');
+  const notes = prop(e, 'DESCRIPTION');
+  assert.match(notes, /^Auto-filled from chat/);
+  assert.match(notes, /Mobile: 0438 407 598/);
+  assert.match(notes, /Vehicle: 2015 Mazda 3/);
+  assert.match(aiPrompts[0], /Customer: Hi, how much for an AC check/); // 对话按时间先后交给 AI
+  assert.ok(aiPrompts[0].indexOf('Mazda') < aiPrompts[0].indexOf('Sunday 7pm'));
+  assert.equal(sentToCustomer.length, 1);
+  const msg = sentToCustomer[0].message.text;
+  assert.match(msg, /^✅ Booking details – Andy Auto AC Regas/);
+  assert.match(msg, /Time: Sunday \d+\/\d+, 7:00pm/);
+  assert.doesNotMatch(msg, /AC not cold/); // 内部备注不发给客人
+  assert.match(barks[0].body, /Confirmation sent/);
+  ok('一键确认：从对话整理资料、写入日历、自动回复客人');
+
+  barks = [];
+  await deliver(echoes[0]);
+  assert.equal(store.size, 1);
+  assert.equal(barks.length, 0);
+  ok('自动回复的消息回传时不会再次触发');
+}
+
+{
+  barks = []; sentToCustomer = [];
+  await send('Booking confirmed', 'mid-ai-1');
+  assert.equal(sentToCustomer.length, 0);
+  ok('Meta 重复推送：不会重复建立，也不会重复发消息给客人');
+}
+
+{
+  store.clear(); barks = []; sentToCustomer = [];
+  await send('Booking confirmed\nTime: Saturday 9am\nPrice: $120', 'mid-ai-2');
+  const e = events()[0];
+  assert.equal(prop(e, 'SUMMARY'), 'Test Customer – Car AC check $120');
+  assert.match(prop(e, 'DESCRIPTION'), /Time: Sat \d+\/\d+ 09:00/);
+  assert.match(sentToCustomer[0].message.text, /Time: Saturday \d+\/\d+, 9:00am/);
+  ok('一键确认时自己写的 Time:、Price: 优先于 AI');
+}
+
+{
+  store.clear(); barks = []; sendFails = true;
+  await send('Booking confirmed', 'mid-ai-3');
+  assert.equal(store.size, 1);
+  assert.match(barks[0].body, /NOT sent[\s\S]*Booking details/);
+  sendFails = false;
+  ok('发消息失败：仍然写入日历，Bark 附上消息让你手动发');
+}
+
+{
+  store.clear(); barks = [];
+  aiReply = { date: '', start: '', service: 'Car AC check', price: '', address: '', mobile: '', vehicle: '', notes: '' };
+  await send('Booking confirmed', 'mid-ai-4');
+  assert.equal(store.size, 0);
+  assert.match(barks[0].title, /Booking not saved/);
+  assert.match(barks[0].body, /Add a Time: line/);
+  ok('对话里找不到时间：不建立预约，提醒补上 Time:');
+}
+
+{
+  barks = [];
+  delete env.ANTHROPIC_API_KEY;
+  await send('Booking confirmed', 'mid-ai-5');
+  assert.match(barks[0].body, /ANTHROPIC_API_KEY/);
+  ok('没有设置 ANTHROPIC_API_KEY 时会提示');
 }
 
 console.log('\n全部通过 ✅');

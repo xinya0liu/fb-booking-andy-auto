@@ -15,6 +15,12 @@
  *     🔄 Booking updated – Andy Auto AC Regas
  *     Time: Friday 31/10 9am
  *
+ *   一键确认（只发关键词，资料从对话自动整理，并自动回复客人；需要 ANTHROPIC_API_KEY）
+ *     Booking confirmed
+ *   也可以顺便写几行，你写的优先，例如：
+ *     Booking confirmed
+ *     Time: Sunday 7pm
+ *
  *   取消（写上原本的日期，客人有多个预约时用来对应）
  *     ❌ Booking cancelled – Andy Auto AC Regas
  *     Your booking for Thursday 30/10 7:20am has been cancelled.
@@ -40,7 +46,10 @@
  *   DEFAULT_MINUTES      没写结束时间时的时长，默认 90
  *   TIMEZONE             默认 "Australia/Brisbane"
  *   GRAPH_VERSION        默认 "v23.0"
- *   ANTHROPIC_API_KEY    填了就会在格式看不懂时用 AI 解析确认消息
+ *   ANTHROPIC_API_KEY    一键确认需要；也会在时间格式看不懂时用 AI 解析
+ *   AUTO_REPLY           "false" = 一键确认时不自动发消息给客人（默认会发）
+ *   CONFIRM_HEADER       自动确认消息的第一行，默认 "✅ Booking details – Andy Auto AC Regas"
+ *   CONFIRM_FOOTER       自动确认消息的最后一行
  *   AI_MODEL             默认 "claude-haiku-5-5"
  *
  * 检查 iCloud 设置：浏览器打开 https://你的worker网址/check?token=你的VERIFY_TOKEN
@@ -96,6 +105,7 @@ async function handle(body, env, origin) {
       const msg = ev.message;
       if (!msg || !msg.text) continue;
       if (msg.is_echo) {
+        if (msg.metadata === BOT_TAG) continue; // Worker 自己发给客人的确认消息
         await onPageMessage(ev, env, origin);
       } else if (env.FORWARD_INCOMING === 'true') {
         await onCustomerMessage(ev, env, origin);
@@ -151,9 +161,13 @@ async function onPageMessage(ev, env, origin) {
   }
 }
 
-async function doConfirm({ env, cfg, psid, mid, text, name, link }) {
+async function doConfirm(ctx) {
+  const { env, cfg, text, name, link } = ctx;
   const f = readFields(text);
-  if (!f.time) throw new Error('No "Time:" line found.');
+
+  // 有 Service: 和 Time: 两行 = 完整模板，照写的内容建立；否则从对话里整理资料
+  const fullTemplate = f.time && f.service;
+  if (!fullTemplate) return doConfirmFromChat(ctx, f);
 
   let w = parseWhenParts(f.time, cfg);
   if ((!w.date || !w.start) && env.ANTHROPIC_API_KEY) {
@@ -167,6 +181,18 @@ async function doConfirm({ env, cfg, psid, mid, text, name, link }) {
   if (!w.start) throw new Error("Couldn't read the time. Please check the format.");
 
   const t = buildTimes(w.date, w.start, w.end, cfg.minutes * 60000);
+  const created = await saveNewBooking(ctx, {
+    t, service: f.service, price: f.price, address: f.address,
+    notes: extraFields(text), // 备注放消息里的所有栏位：Service、Price、Time、Address、Mobile、Vehicle 等
+  });
+  if (!created) return;
+
+  const body = [t.label, f.service, f.price].filter(Boolean).join(' · ') + (w.warning ? `\n${w.warning}` : '');
+  await bark(env, `📅 Booking added: ${name}`, body, link);
+}
+
+// 写入新预约。已经有同一时间的预约、或 Meta 重复推送时返回 false
+async function saveNewBooking({ env, cfg, psid, mid, name, link }, { t, service, price, address, notes }) {
   const id = (await sha256hex(mid)).slice(0, 32);
   const uid = `${id}-${psid}@fb-booking`; // 客人编号藏在事件的 UID 里，备注里不用写
 
@@ -175,32 +201,194 @@ async function doConfirm({ env, cfg, psid, mid, text, name, link }) {
   const same = existing.find(e => sameLocalStart(e, t, cfg.tz));
   if (same) {
     if (same.uid !== uid) await bark(env, `ℹ️ Already in calendar: ${name}`, t.label, link);
-    return;
+    return false;
   }
-
-  // 备注放消息里的所有栏位：Service、Price、Time、Address、Mobile、Vehicle 等
 
   const ics = buildEvent({
     uid,
     startMs: zonedToUtc(t.start, cfg.tz),
     endMs: zonedToUtc(t.end, cfg.tz),
-    summary: buildSummary(name, f.service, f.price),
-    location: f.address,
-    description: extraFields(text).join('\n'),
+    summary: buildSummary(name, service, price),
+    location: address,
+    description: notes.join('\n'),
     url: link,
-    x: { psid, name, service: f.service, price: f.price },
+    x: { psid, name, service, price },
   });
 
   const cal = await calendarUrl(env);
   try {
     await dav(env, 'PUT', `${cal}${id}.ics`, { body: ics, headers: { 'if-none-match': '*' } });
   } catch (e) {
-    if (e.status === 412) return; // Meta 重复推送同一条消息
+    if (e.status === 412) return false; // Meta 重复推送同一条消息
     throw e;
   }
+  return true;
+}
 
-  const body = [t.label, f.service, f.price].filter(Boolean).join(' · ') + (w.warning ? `\n${w.warning}` : '');
-  await bark(env, `📅 Booking added: ${name}`, body, link);
+// ================= 一键确认：从对话整理资料 =================
+//
+// 只发 "Booking confirmed"（可以另外写几行，例如 Time:、Price:，你写的优先）：
+//   1. 读取这位客人最近 30 天的对话
+//   2. 用 AI 整理出时间、服务、价格、地址、电话、车型、备注
+//   3. 写进日历
+//   4. 用专页自动发一条完整的确认消息给客人（AUTO_REPLY=false 可关闭）
+//   5. Bark 推送整理结果给管理员核对
+
+const CHAT_FIELDS = [
+  ['service', 'Service'], ['price', 'Price'], ['time', 'Time'], ['address', 'Address'],
+  ['mobile', 'Mobile'], ['vehicle', 'Vehicle'], ['notes', 'Notes'],
+];
+const BOT_TAG = 'fb-booking'; // Worker 自己发出的消息带这个标记，回传时不再处理
+
+async function doConfirmFromChat(ctx, f) {
+  const { env, cfg, psid, text, name, link } = ctx;
+  if (!env.ANTHROPIC_API_KEY) {
+    throw new Error('No "Time:" line found. To fill in the details from the chat automatically, set ANTHROPIC_API_KEY in Cloudflare.');
+  }
+
+  const chat = await readConversation(psid, env, cfg);
+  const ai = await aiFromChat(chat, cfg, env);
+
+  // 你在消息里写的栏位优先，其次才用 AI 整理的
+  const typed = {};
+  for (const l of extraFields(text)) typed[fieldLabel(l).toLowerCase()] = l.slice(l.search(/[:：]/) + 1).trim();
+  const d = {};
+  for (const [k, label] of CHAT_FIELDS) d[k] = typed[label.toLowerCase()] || ai[k] || '';
+
+  let w;
+  if (typed.time) {
+    w = parseWhenParts(typed.time, cfg);
+    if (!w.date || !w.start) throw new Error("Couldn't read your Time: line. Please check the format.");
+  } else {
+    if (!ai.date || !ai.start) {
+      throw new Error("Couldn't find the booking date and time in the chat. Add a Time: line, e.g. Time: Sunday 7pm, and send again.");
+    }
+    w = { date: ai.date, start: ai.start, end: ai.end, warning: '' };
+  }
+  const t = buildTimes(w.date, w.start, w.end, cfg.minutes * 60000);
+  d.time = t.label;
+
+  // 备注：所有栏位，加上你另外写的其他行
+  const notes = ['Auto-filled from chat'];
+  for (const [k, label] of CHAT_FIELDS) if (d[k]) notes.push(`${label}: ${d[k]}`);
+  for (const l of extraFields(text)) {
+    if (!CHAT_FIELDS.some(([, label]) => label.toLowerCase() === fieldLabel(l).toLowerCase())) notes.push(l);
+  }
+
+  const created = await saveNewBooking(ctx, { t, service: d.service, price: d.price, address: d.address, notes });
+  if (!created) return;
+
+  // 自动回复客人
+  const msg = customerMessage(d, w, t, env);
+  let sent = { ok: false, error: 'AUTO_REPLY is off' };
+  if (env.AUTO_REPLY !== 'false') sent = await sendToCustomer(psid, msg, env);
+
+  const missing = ['service', 'price', 'address', 'mobile'].filter(k => !d[k]).map(k => CHAT_FIELDS.find(x => x[0] === k)[1]);
+  const lines = [
+    [t.label, d.service, d.price].filter(Boolean).join(' · '),
+    d.address, d.mobile && `📱 ${d.mobile}`, d.vehicle && `🚗 ${d.vehicle}`, d.notes && `📝 ${d.notes}`,
+  ].filter(Boolean);
+  if (w.warning) lines.push(w.warning);
+  if (missing.length) lines.push(`ℹ️ Not found in chat: ${missing.join(', ')}`);
+  if (sent.ok) lines.push('✉️ Confirmation sent to the customer.');
+  else lines.push('', `⚠️ Confirmation NOT sent to the customer (${sent.error}). Please send it yourself:`, '', msg);
+  await bark(env, `📅 Booking added: ${name}`, lines.join('\n'), link);
+}
+
+// 读取对话：最近 30 天、最多 50 条，按时间先后
+async function readConversation(psid, env, cfg) {
+  const graph = `https://graph.facebook.com/${cfg.graph}`;
+  const token = `access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN || '')}`;
+  const c = await (await fetch(`${graph}/me/conversations?platform=messenger&user_id=${psid}&fields=id&${token}`)).json();
+  const id = c.data?.[0]?.id;
+  if (!id) throw new Error(`Facebook: couldn't find this conversation. ${JSON.stringify(c.error || c).slice(0, 200)}`);
+  const m = await (await fetch(`${graph}/${id}/messages?fields=message,from,created_time&limit=50&${token}`)).json();
+  if (m.error || !m.data) throw new Error(`Facebook: couldn't read the messages. ${JSON.stringify(m.error || m).slice(0, 200)}`);
+  const since = Date.now() - 30 * 864e5;
+  const list = m.data
+    .filter(x => x.message && Date.parse(x.created_time) >= since)
+    .reverse()
+    .map(x => ({ who: x.from?.id === psid ? 'Customer' : 'Us', label: localParts(Date.parse(x.created_time), cfg.tz).label, text: x.message }));
+  if (!list.length) throw new Error('Facebook: no messages found in this conversation in the last 30 days.');
+  return list;
+}
+
+async function aiFromChat(chat, cfg, env) {
+  const t = todayInTz(cfg.tz);
+  const transcript = chat.map(x => `[${x.label}] ${x.who}: ${x.text}`).join('\n');
+  const prompt =
+`Today is ${WD_LONG[dowOf(t)]} ${t.y}-${pad(t.m)}-${pad(t.d)}, time zone ${cfg.tz}.
+Below is a Facebook Messenger chat between a mobile car air-conditioning business ("Us") and a customer.
+The business has just confirmed a booking. Extract the details of the booking that was agreed most recently.
+
+Rules:
+- Dates in the chat are Australian (day/month). Words like "tomorrow" or "Sunday" are relative to the time that message was sent, shown in [brackets].
+- Use the final agreed values, e.g. the last price quoted by Us, not an earlier estimate.
+- The business's own phone number appears in messages from Us. Never use it as the customer's mobile.
+- Leave a field as "" if it was not mentioned. Do not guess or invent anything.
+- notes: only things the technician should know (e.g. symptoms, parts needed, parking). Keep it short, or "".
+
+Reply with JSON only, nothing else:
+{"date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM or empty","service":"","price":"e.g. $150","address":"","mobile":"","vehicle":"","notes":""}
+
+Chat (oldest first):
+${transcript}`;
+
+  let o;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: env.AI_MODEL || 'claude-haiku-5-5', max_tokens: 600, messages: [{ role: 'user', content: prompt }] }),
+    });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
+    const out = (j.content || []).map(c => c.text || '').join('').replace(/```json|```/g, '').trim();
+    o = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1));
+  } catch (e) {
+    throw new Error(`AI couldn't read the chat: ${e.message}`);
+  }
+
+  const res = {};
+  for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'notes']) res[k] = String(o[k] || '').trim();
+  const dm = String(o.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const sm = String(o.start || '').match(/^(\d{1,2}):(\d{2})$/);
+  const em = String(o.end || '').match(/^(\d{1,2}):(\d{2})$/);
+  res.date = dm ? { y: +dm[1], m: +dm[2], d: +dm[3] } : null;
+  res.start = sm ? { h: +sm[1], min: +sm[2] } : null;
+  res.end = em ? { h: +em[1], min: +em[2] } : null;
+  return res;
+}
+
+// 发给客人的确认消息（标题不能包含三个关键词，避免回传时又触发）
+function customerMessage(d, w, t, env) {
+  const { y, m, d: day } = w.date;
+  const h = w.start.h, min = w.start.min;
+  const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
+  const when = `${WD_LONG[dowOf({ y, m, d: day })]} ${day}/${m}, ${clock}`;
+  const lines = [env.CONFIRM_HEADER || '✅ Booking details – Andy Auto AC Regas'];
+  if (d.service) lines.push(`Service: ${d.service}`);
+  if (d.price) lines.push(`Price: ${d.price}`);
+  lines.push(`Time: ${when}`);
+  if (d.address) lines.push(`Address: ${d.address}`);
+  if (d.vehicle) lines.push(`Vehicle: ${d.vehicle}`);
+  lines.push('', env.CONFIRM_FOOTER || 'Any changes, reply here or call Andy on 0478 701 289. See you then!');
+  return lines.join('\n');
+}
+
+async function sendToCustomer(psid, text, env) {
+  try {
+    const r = await fetch(`https://graph.facebook.com/${config(env).graph}/me/messages?access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN || '')}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ recipient: { id: psid }, messaging_type: 'RESPONSE', message: { text, metadata: BOT_TAG } }),
+    });
+    const j = await r.json();
+    if (j.error) return { ok: false, error: j.error.message || 'Facebook error' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 }
 
 async function doUpdate({ env, cfg, psid, text, name, link }) {
@@ -877,7 +1065,7 @@ async function conversationLink(cfg, env, psid) {
 async function bark(env, title, body, link) {
   const urls = (env.BARK_URL || '').split(/[,\s]+/).map(u => u.trim().replace(/\/+$/, '')).filter(Boolean);
   if (!urls.length) return;
-  const path = `/${encodeURIComponent(title)}/${encodeURIComponent(String(body || ' ').slice(0, 800))}`;
+  const path = `/${encodeURIComponent(title)}/${encodeURIComponent(String(body || ' ').slice(0, 1500))}`;
   const query = `?group=${encodeURIComponent(env.BARK_GROUP || 'Bookings')}` + (link ? `&url=${encodeURIComponent(link)}` : '');
   await Promise.all(urls.map(u => fetch(u + path + query).catch(e => console.error('bark', e))));
 }
