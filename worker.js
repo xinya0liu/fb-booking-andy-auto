@@ -203,8 +203,9 @@ async function doConfirm({ env, cfg, psid, mid, text, name, link }) {
 
 async function doUpdate({ env, cfg, psid, text, name, link }) {
   const f = readFields(text);
-  if (!f.time && !f.service && !f.price && !f.address) {
-    throw new Error('Nothing to update. Add a Time:, Service:, Price: or Address: line.');
+  const fields = extraFields(text);
+  if (!fields.length) {
+    throw new Error('Nothing to update. Add a line like Time:, Price:, Address: or Mobile:.');
   }
 
   const list = await findBookings(env, cfg, psid);
@@ -248,9 +249,19 @@ async function doUpdate({ env, cfg, psid, text, name, link }) {
     if (f.price) changed.push('Price');
   }
 
-  const note = t ? `Rescheduled from ${old.label}` : `Updated: ${changed.join(', ')}`;
-  const notes = [note, target.description, extraFields(text).join('\n')].filter(Boolean).join('\n\n');
-  changes.DESCRIPTION = [`DESCRIPTION:${icsEsc(notes)}`];
+  // 其他栏位（Mobile、Vehicle 等）
+  for (const l of fields) {
+    const label = fieldLabel(l);
+    if (!/^(service|price|time|address)$/i.test(label)) changed.push(label);
+  }
+
+  // 备注：同名的栏位直接换成新的，新栏位加在后面；最上面记一笔改动
+  const others = changed.filter(c => c !== 'Time');
+  const note = t
+    ? `Rescheduled from ${old.label}` + (others.length ? ` · Changed: ${others.join(', ')}` : '')
+    : `Updated: ${changed.join(', ')}`;
+  const newLines = fields.map(l => (t && /^time$/i.test(fieldLabel(l)) ? `Time: ${t.label}` : l));
+  changes.DESCRIPTION = [`DESCRIPTION:${icsEsc(mergeNotes(target.description, newLines, note))}`];
 
   try {
     await dav(env, 'PUT', target.href, {
@@ -322,7 +333,22 @@ function readFields(text) {
 // 消息里所有 "标签: 内容" 格式的行（开头那行和结尾的客套话、你的电话都不放）
 function extraFields(text) {
   return text.split(/\r?\n/).map(l => l.trim())
-    .filter(l => /^[A-Za-z\u4e00-\u9fff][\w \u4e00-\u9fff]{0,24}[:：]\s*\S/.test(l));
+    .filter(l => FIELD_RE.test(l));
+}
+
+const FIELD_RE = /^[A-Za-z\u4e00-\u9fff][\w \u4e00-\u9fff]{0,24}[:：]\s*\S/;
+const fieldLabel = l => l.split(/[:：]/)[0].trim();
+
+function mergeNotes(old, newLines, note) {
+  const lines = old ? old.split('\n') : [];
+  for (const u of newLines) {
+    const key = fieldLabel(u).toLowerCase();
+    let idx = -1;
+    lines.forEach((l, i) => { if (FIELD_RE.test(l.trim()) && fieldLabel(l.trim()).toLowerCase() === key) idx = i; });
+    if (idx >= 0) lines[idx] = u; else lines.push(u);
+  }
+  const hasHistory = /^(Rescheduled from|Updated:)/.test(lines[0] || '');
+  return [note, ...(hasHistory || !lines.length ? [] : ['']), ...lines].join('\n').trim();
 }
 
 function buildSummary(name, service, price) {
