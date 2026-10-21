@@ -37,11 +37,9 @@
  *   ICLOUD_APP_PASSWORD  App 专用密码（xxxx-xxxx-xxxx-xxxx），设为 Secret
  *   ICLOUD_CALENDAR      iCloud 日历的名称，默认 "客人预约"
  *   BARK_URL             一个或多个 Bark 网址，用逗号隔开
- *   LINK_TEMPLATE        对话链接模板，可用 {psid} {page} {conv} {linkid} {fblink}
- *                        （不知道用哪种：打开 /links?token=你的VERIFY_TOKEN 测试）
  * 可选：
  *   ICLOUD_CALENDAR_URL  直接指定日历网址（一般不用填，Worker 会按名称自动找）
- *   LINK_DIRECT          "true" = 对话链接不经过 Worker 中转
+ *   INBOX_URL            客人卡片“打开收件箱”按钮的网址，默认 Business Suite 收件箱
  *   FORWARD_INCOMING     "true" = 客人发来的消息也推 Bark
  *   BARK_GROUP           Bark 分组，默认 "Bookings"
  *   DEFAULT_MINUTES      没写结束时间时的时长，默认 90
@@ -76,12 +74,10 @@ export default {
       return checkPage(env);
     }
 
-    // 对话链接测试页
-    if (req.method === 'GET' && url.pathname === '/links') {
-      if (!env.VERIFY_TOKEN || url.searchParams.get('token') !== env.VERIFY_TOKEN) {
-        return new Response('forbidden', { status: 403 });
-      }
-      return linksPage(env, url.origin);
+    // 客人卡片：显示客人名字，一键复制名字并打开收件箱
+    // （iPhone 上的 Business Suite 不支持直接打开某一个对话，所以改用搜索名字的方式）
+    if (req.method === 'GET' && url.pathname === '/c') {
+      return customerCard(url.searchParams.get('n') || '', env);
     }
 
     // Meta webhook 验证
@@ -128,7 +124,6 @@ function config(env) {
   return {
     tz: env.TIMEZONE || 'Australia/Brisbane',
     minutes: parseInt(env.DEFAULT_MINUTES || '90', 10),
-    linkTemplate: env.LINK_TEMPLATE || '',
     graph: env.GRAPH_VERSION || 'v23.0',
   };
 }
@@ -160,13 +155,11 @@ async function onPageMessage(ev, env, origin) {
   const mid = ev.message.mid || `${psid}-${text}`;
   console.log(`${action}${manual ? ' (manual)' : ''}, psid = ${psid}`);
 
-  const [name, rawLink] = await Promise.all([
-    getCustomerName(psid, env),
-    conversationLink(cfg, env, psid, ev.sender.id),
-  ]);
+  const name = await getCustomerName(psid, env);
   // 消息里写了 "Name: …" 就用它，否则用 Facebook 上的名字
   const typed = readFields(text).name;
-  const ctx = { env, cfg, psid, mid, text, manual, name: typed || name || 'Customer', link: viaWorker(origin, env, rawLink) };
+  const shown = typed || name || 'Customer';
+  const ctx = { env, cfg, psid, mid, text, manual, name: shown, link: cardLink(origin, typed || name) };
 
   try {
     if (action === 'confirm') await doConfirm(ctx);
@@ -702,8 +695,8 @@ async function notFound(env, name, link, hint) {
 async function onCustomerMessage(ev, env, origin) {
   const cfg = config(env);
   const psid = ev.sender.id;
-  const [name, rawLink] = await Promise.all([getCustomerName(psid, env), conversationLink(cfg, env, psid, ev.recipient.id)]);
-  await bark(env, `💬 ${name || 'Customer'}`, ev.message.text, viaWorker(origin, env, rawLink));
+  const name = await getCustomerName(psid, env);
+  await bark(env, `💬 ${name || 'Customer'}`, ev.message.text, cardLink(origin, name));
 }
 
 // ================= 读取消息 =================
@@ -1212,106 +1205,52 @@ async function getCustomerName(psid, env) {
   return null;
 }
 
-// 把对话链接包一层 Worker 中转（设 LINK_DIRECT=true 可关闭）
-function viaWorker(origin, env, link) {
-  if (!link || !origin || env.LINK_DIRECT === 'true') return link;
-  return `${origin}/go?u=${encodeURIComponent(link)}`;
+// 通知和日历里的链接：打开客人卡片
+function cardLink(origin, name) {
+  if (!origin || !name) return '';
+  return `${origin}/c?n=${encodeURIComponent(name)}`;
 }
 
-// LINK_TEMPLATE 占位符：{psid} 客人编号、{page} 专页编号、{conv} 对话编号（t_ 后面的部分）、
-//   {linkid}（对话链接里 /inbox/ 后面的数字）、{fblink}（Meta 提供的完整对话链接）
-// 不知道该用哪一种时，打开 /links?token=<VERIFY_TOKEN> 测试页逐一试
-async function conversationLink(cfg, env, psid, pageId = '') {
-  const tpl = cfg.linkTemplate;
-  if (!tpl) return '';
-  const vals = { psid, page: pageId || '', conv: '', linkid: '', fblink: '' };
-  if (/\{(conv|linkid|fblink)\}/.test(tpl)) {
-    try {
-      const r = await fetch(`https://graph.facebook.com/${cfg.graph}/me/conversations?platform=messenger` +
-        `&user_id=${psid}&fields=id,link&access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN)}`);
-      const j = await r.json();
-      const c = (j.data || [])[0];
-      if (!c) { console.error('conversation lookup', JSON.stringify(j)); return ''; }
-      Object.assign(vals, convParts(c));
-    } catch (e) {
-      console.error('conversation lookup', e);
-      return '';
-    }
+function customerCard(name, env) {
+  const inbox = env.INBOX_URL || 'https://business.facebook.com/latest/inbox/all';
+  const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const html = `<!doctype html><html lang="en"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(name || 'Customer')}</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#111; --muted:#666; --btn:#0866ff; --btn2:#e4e6eb; --fg2:#111 }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#f2f2f2; --muted:#aaa; --btn2:#333; --fg2:#f2f2f2 } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:17px -apple-system,system-ui,sans-serif;
+         display:flex; min-height:100vh; align-items:center; justify-content:center; padding:24px; box-sizing:border-box }
+  main { width:100%; max-width:420px; text-align:center }
+  h1 { font-size:30px; margin:0 0 6px; word-break:break-word }
+  p { color:var(--muted); margin:0 0 28px; font-size:15px }
+  a, button { display:block; width:100%; box-sizing:border-box; border:0; border-radius:12px; padding:16px;
+              font:600 17px -apple-system,system-ui,sans-serif; text-decoration:none; margin-bottom:12px; cursor:pointer }
+  .main { background:var(--btn); color:#fff }
+  .sub { background:var(--btn2); color:var(--fg2) }
+  #ok { min-height:20px; color:var(--muted); font-size:14px }
+  input { position:absolute; left:-9999px }
+</style>
+<main>
+  <h1>${esc(name || 'Customer')}</h1>
+  <p>Tap the button, then paste the name into the inbox search.</p>
+  <a class="main" id="go" href="${esc(inbox)}">Copy name &amp; open inbox</a>
+  <button class="sub" id="copy" type="button">Copy name only</button>
+  <div id="ok"></div>
+  <input id="t" value="${esc(name)}" readonly>
+</main>
+<script>
+  function copyName() {
+    var t = document.getElementById('t'), ok = false;
+    try { t.removeAttribute('readonly'); t.select(); t.setSelectionRange(0, 9999); ok = document.execCommand('copy'); t.setAttribute('readonly', ''); } catch (e) {}
+    try { if (navigator.clipboard) { navigator.clipboard.writeText(t.value); ok = true; } } catch (e) {}
+    document.getElementById('ok').textContent = ok ? 'Name copied ✓' : 'Could not copy. Press and hold the name to copy it.';
   }
-  return fillLink(tpl, vals);
-}
-
-function convParts(c) {
-  const path = c.link || '';
-  return {
-    conv: String(c.id || '').replace(/^t_/, ''),
-    linkid: (path.match(/inbox\/(\d+)/) || [])[1] || '',
-    fblink: path ? (path.startsWith('http') ? path : `https://www.facebook.com${path}`) : '',
-  };
-}
-
-function fillLink(tpl, v) {
-  return tpl.replace(/\{(psid|page|conv|linkid|fblink)\}/g, (_, k) => v[k] || '');
-}
-
-// 链接测试页：列出最近的对话，每个对话给几种不同写法的链接，用 iPhone 点点看哪一种能打开正确的客人
-const LINK_CANDIDATES = [
-  'https://business.facebook.com/latest/inbox/all?asset_id={page}&selected_item_id={psid}&thread_type=FB_MESSAGE',
-  'https://business.facebook.com/latest/inbox/all?asset_id={page}&selected_item_id={conv}&thread_type=FB_MESSAGE',
-  'https://business.facebook.com/latest/inbox/all?asset_id={page}&selected_item_id={linkid}&thread_type=FB_MESSAGE',
-  '{fblink}',
-  'https://business.facebook.com/latest/inbox/messenger?asset_id={page}&selected_item_id={conv}&mailbox_id={page}',
-];
-
-async function linksPage(env, origin) {
-  const cfg = config(env);
-  const graph = `https://graph.facebook.com/${cfg.graph}`;
-  const token = `access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN || '')}`;
-  const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  let html = '';
-  try {
-    const list = await (await fetch(`${graph}/me/conversations?platform=messenger&limit=8` +
-      `&fields=id,link,updated_time,participants&${token}`)).json();
-    if (!list.data) throw new Error(JSON.stringify(list.error || list));
-
-    // 专页编号：先问 Meta；没有权限的话，用“每个对话都有的那个参与者”
-    const me = { id: '', name: '' };
-    try {
-      const j = await (await fetch(`${graph}/me?fields=id&${token}`)).json();
-      if (j.id) me.id = j.id;
-    } catch { /* 没有权限就用下面的方法 */ }
-    const count = {};
-    for (const c of list.data) for (const x of c.participants?.data || []) {
-      count[x.id] = (count[x.id] || 0) + 1;
-      if (x.id === me.id) me.name = x.name;
-    }
-    if (!me.id) {
-      const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
-      if (top && (list.data.length === 1 ? false : top[1] === list.data.length)) me.id = top[0];
-    }
-    for (const c of list.data) for (const x of c.participants?.data || []) if (x.id === me.id) me.name = x.name;
-
-    html += `<p>Page: <b>${esc(me.name || '(unknown)')}</b> (${esc(me.id || 'unknown')})</p>`;
-    html += `<p>Current LINK_TEMPLATE:<br><code>${esc(cfg.linkTemplate || '(empty)')}</code></p>`;
-    for (const c of list.data) {
-      const who = (c.participants?.data || []).find(x => x.id !== me.id) || {};
-      const vals = { psid: who.id || '', page: me.id, ...convParts(c) };
-      html += `<h2>${esc(who.name || '(unknown)')}</h2><p class="m">psid ${esc(vals.psid)} · conv ${esc(vals.conv)} · linkid ${esc(vals.linkid || '-')}</p><ol>`;
-      LINK_CANDIDATES.forEach(tpl => {
-        const url = fillLink(tpl, vals);
-        html += `<li><a href="${esc(url)}" target="_blank">Try link</a> · <a href="${esc(`${origin}/go?u=${encodeURIComponent(url)}`)}" target="_blank">via /go</a>` +
-          `<br><code>${esc(tpl)}</code></li>`;
-      });
-      html += '</ol>';
-    }
-  } catch (e) {
-    html = `<p>❌ ${esc(e.message)}</p>`;
-  }
-  return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Link test</title><style>body{font:16px -apple-system,sans-serif;margin:16px;max-width:720px}code{font-size:12px;word-break:break-all;color:#555}
-li{margin:10px 0}h2{margin:24px 0 4px;font-size:18px}.m{color:#777;font-size:13px;margin:0}</style>
-<h1>Conversation link test</h1><p>For one customer you know, tap each link on your iPhone. Note which number opens <b>that customer's</b> chat, and whether it works directly or via /go.</p>${html}`,
-    { headers: { 'content-type': 'text/html; charset=utf-8' } });
+  document.getElementById('go').addEventListener('click', copyName);
+  document.getElementById('copy').addEventListener('click', copyName);
+</script></html>`;
+  return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
 }
 
 // BARK_URL 可以放多个网址，用逗号隔开
