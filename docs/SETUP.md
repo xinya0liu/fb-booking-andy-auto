@@ -43,7 +43,7 @@ iPhone 的“设置”里**没有**这个选项，只能在网页上生成。
 Worker 名称是 `fb-booking-andy-auto`，连接这个 GitHub 仓库自动部署：
 
 1. Cloudflare 后台 → Workers & Pages → Create → 导入 GitHub 仓库 `fb-booking-andy-auto`。
-2. 部署设置使用仓库里的 `wrangler.jsonc`，入口是 `worker.js`。
+2. 部署设置使用仓库里的 `wrangler.jsonc`，入口是 `worker.js`。Settings → Build 里，Production branch 要是 `main`，Deploy command 要是 `npx wrangler deploy`。
 3. 之后每次提交到 GitHub，Cloudflare 会自动 Build 并部署，状态显示 **Ready** 就生效。
 
 `wrangler.jsonc` 里的 `"keep_vars": true` 很重要：它让每次部署时保留后台填的变量。删掉的话，部署后普通变量会被清空。
@@ -54,14 +54,13 @@ Worker 名称是 `fb-booking-andy-auto`，连接这个 GitHub 仓库自动部署
 
 | 名称 | 类型 | 内容 |
 |---|---|---|
-| `VERIFY_TOKEN` | Secret | 自己编一串字符。Meta 验证 webhook 用，也是 `/check` 检查页的密码 |
+| `VERIFY_TOKEN` | Secret | 自己编一串**只有英文字母和数字的长字串**（不要用 `123` 这种容易猜的）。Meta 验证 webhook 用，也是 `/check` 检查页的密码 |
 | `APP_SECRET` | Secret | Meta App 的 App Secret（App 设置 → 基本资料） |
-| `PAGE_ACCESS_TOKEN` | Secret | 专页访问令牌，用来查客人名字和对话链接 |
+| `PAGE_ACCESS_TOKEN` | Secret | 专页访问令牌，用来查客人名字、读对话、自动回复客人 |
 | `ICLOUD_USER` | 普通 | Apple ID 邮箱 |
 | `ICLOUD_APP_PASSWORD` | Secret | 第 2 步的 App 专用密码 |
 | `ICLOUD_CALENDAR` | 普通 | 日历名称，例如 `Andy Auto AC Regas`。不填的话默认找 `客人预约` |
 | `BARK_URL` | Secret | 一个或多个 Bark 网址，用逗号隔开 |
-| `LINK_TEMPLATE` | 普通 | 对话链接模板，见下面说明 |
 | `ANTHROPIC_API_KEY` | Secret | 第 4 步的 API Key。读对话、AI 整理、自动回复客人需要 |
 
 **选填**
@@ -72,7 +71,7 @@ Worker 名称是 `fb-booking-andy-auto`，连接这个 GitHub 仓库自动部署
 | `DEFAULT_MINUTES` | `90` | 没写结束时间时的预约时长（分钟） |
 | `TIMEZONE` | `Australia/Brisbane` | 时区 |
 | `BARK_GROUP` | `Bookings` | Bark 里的分组名称 |
-| `LINK_DIRECT` | 关 | 设成 `true` 时，通知和日历里的链接直接指向 Facebook，不经过 Worker 中转 |
+| `INBOX_URL` | `https://business.facebook.com/latest/inbox/all` | 客人卡片上“打开收件箱”按钮的网址 |
 | `ICLOUD_CALENDAR_URL` | 自动 | 直接指定日历网址。一般不用填，Worker 会按名称自动找 |
 | `GRAPH_VERSION` | `v23.0` | Meta Graph API 版本 |
 | `AUTO_REPLY` | 开 | 设成 `false` 时，`Booking confirmed` / `updated` 照样整理和写日历，但不自动发消息给客人 |
@@ -81,22 +80,9 @@ Worker 名称是 `fb-booking-andy-auto`，连接这个 GitHub 仓库自动部署
 | `CONFIRM_FOOTER` | `Any changes, reply here or call Andy on 0478 701 289. See you then!` | 自动消息的最后一行 |
 | `AI_MODEL` | `claude-haiku-5-5` | AI 用的模型 |
 
-### LINK_TEMPLATE
+### 通知和日历里的链接
 
-点 Bark 通知或日历事件里的链接时，要打开的对话网址。可以用的占位符：
-
-- `{psid}`：客人编号
-- `{conv}`：对话编号（`t_` 后面的数字）
-- `{linkid}`：收件箱链接里 `/inbox/` 后面的数字
-- `{fblink}`：Meta 提供的完整对话链接
-
-做法：在 Business Suite 打开任何一个客人的对话，复制网址，把里面客人编号的部分换成 `{psid}`。例如：
-
-```
-https://business.facebook.com/latest/inbox/all?selected_item_id={psid}
-```
-
-链接默认经过 Worker 的 `/go` 中转，在 iPhone 上比较容易正确打开 Facebook。
+不需要设置。链接会打开 Worker 的客人卡片页面（`/c?n=客人名字`），一键复制名字并打开收件箱。旧版本用过的 `LINK_TEMPLATE`、`LINK_DIRECT` 已经不再使用，可以从变量里删除。
 
 ## 6. Meta App 和 Webhook
 
