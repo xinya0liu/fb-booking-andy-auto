@@ -166,7 +166,7 @@ async function doConfirm({ env, cfg, psid, mid, text, name, link }) {
 
   const t = buildTimes(w.date, w.start, w.end, cfg.minutes * 60000);
   const id = (await sha256hex(mid)).slice(0, 32);
-  const uid = `${id}@fb-booking`;
+  const uid = `${id}-${psid}@fb-booking`; // 客人编号藏在事件的 UID 里，备注里不用写
 
   // 防重复：同一位客人同一时间已经有预约就跳过
   const existing = await findBookings(env, cfg, psid);
@@ -176,9 +176,7 @@ async function doConfirm({ env, cfg, psid, mid, text, name, link }) {
     return;
   }
 
-  const lines = [];
-  if (link) lines.push(`Chat: ${link}`, '');
-  lines.push(`Customer ID: ${psid}`, '', '— Original message —', text);
+  // 备注放消息里的所有栏位：Service、Price、Time、Address、Mobile、Vehicle 等
 
   const ics = buildEvent({
     uid,
@@ -186,7 +184,7 @@ async function doConfirm({ env, cfg, psid, mid, text, name, link }) {
     endMs: zonedToUtc(t.end, cfg.tz),
     summary: buildSummary(name, f.service, f.price),
     location: f.address,
-    description: lines.join('\n'),
+    description: extraFields(text).join('\n'),
     url: link,
     x: { psid, name, service: f.service, price: f.price },
   });
@@ -251,7 +249,8 @@ async function doUpdate({ env, cfg, psid, text, name, link }) {
   }
 
   const note = t ? `Rescheduled from ${old.label}` : `Updated: ${changed.join(', ')}`;
-  changes.DESCRIPTION = [`DESCRIPTION:${icsEsc(`${note}\n\n${target.description}\n\n— Update message —\n${text}`)}`];
+  const notes = [note, target.description, extraFields(text).join('\n')].filter(Boolean).join('\n\n');
+  changes.DESCRIPTION = [`DESCRIPTION:${icsEsc(notes)}`];
 
   try {
     await dav(env, 'PUT', target.href, {
@@ -318,6 +317,12 @@ function readFields(text) {
     return m ? m[1].trim() : '';
   };
   return { service: field('Service'), price: field('Price'), time: field('Time'), address: field('Address') };
+}
+
+// 消息里所有 "标签: 内容" 格式的行（开头那行和结尾的客套话、你的电话都不放）
+function extraFields(text) {
+  return text.split(/\r?\n/).map(l => l.trim())
+    .filter(l => /^[A-Za-z\u4e00-\u9fff][\w \u4e00-\u9fff]{0,24}[:：]\s*\S/.test(l));
 }
 
 function buildSummary(name, service, price) {
@@ -572,7 +577,8 @@ async function findBookings(env, cfg, psid) {
     if (!ics.includes('BEGIN:VEVENT')) continue;
     const e = parseEvent(ics, cfg.tz);
     if (!e.startMs || e.endMs <= now) continue;
-    if (e.psid ? e.psid !== psid : !e.description.includes(psid)) continue;
+    const tagged = e.psid || (e.uid.match(/-(\d+)@fb-booking$/) || [])[1]; // 隐藏栏位或 UID 里的客人编号
+    if (tagged ? tagged !== psid : !e.description.includes(psid)) continue; // 旧事件：备注里的 Customer ID
     e.href = new URL(xmlText(xmlOne(resp, 'href')), cal).href;
     e.etag = xmlText(xmlOne(resp, 'getetag')) || null;
     list.push(e);
