@@ -107,7 +107,6 @@ globalThis.fetch = async (input, opt = {}) => {
 const env = {
   VERIFY_TOKEN: 'verify', ICLOUD_USER: USER, ICLOUD_APP_PASSWORD: PASS, ICLOUD_CALENDAR: 'Andy Auto AC Regas',
   BARK_URL: 'https://api.day.app/KEY1,https://api.day.app/KEY2', PAGE_ACCESS_TOKEN: 'x',
-  LINK_TEMPLATE: 'https://business.facebook.com/latest/inbox/all?selected_item_id={psid}',
 };
 
 async function deliver(messaging) {
@@ -162,7 +161,7 @@ Any changes, reply here or call Andy on 0478 701 289. See you then!`;
   assert.equal(prop(e, 'LOCATION'), '56 Smith St, Eagleby');
   assert.match(prop(e, 'DESCRIPTION'), /Mobile: 0412 345 678/);
   assert.doesNotMatch(prop(e, 'DESCRIPTION'), /0478/);
-  assert.match(prop(e, 'URL'), /selected_item_id%3D111/);
+  assert.equal(prop(e, 'URL'), 'https://worker.test/c?n=Test%20Customer');
   assert.equal(barks.length, 2); // 两个 Bark 都收到
   assert.match(barks[0].title, /Booking added/);
   ok('确认：建立事件，备注不含商家电话，两个 Bark 都收到');
@@ -223,6 +222,15 @@ Any changes, reply here or call Andy on 0478 701 289. See you then!`;
   await send(`Booking confirmed\nService: x\nTime: whenever`, 'mid-7');
   assert.match(barks[0].title, /Booking not saved/);
   ok('时间看不懂：推送“Booking not saved”提醒');
+}
+
+{
+  const r = await worker.fetch(new Request('https://worker.test/c?n=' + encodeURIComponent('Jane <b>Doe</b>')), env, {});
+  const html = await r.text();
+  assert.match(html, /<h1>Jane &lt;b&gt;Doe&lt;\/b&gt;<\/h1>/); // 名字会被转义，不能插入网页代码
+  assert.match(html, /href="https:\/\/business\.facebook\.com\/latest\/inbox\/all"/);
+  assert.match(html, /Copy name &amp; open inbox/);
+  ok('客人卡片：显示名字、复制并打开收件箱，名字已安全转义');
 }
 
 {
