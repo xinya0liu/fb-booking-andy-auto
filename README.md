@@ -43,7 +43,7 @@ Cloudflare Worker（worker.js）
   └─ 推送 Bark 通知给所有管理员
             │
             ▼
-iPhone 日历几乎马上更新；点事件里的链接可以回到那个客人的对话
+iPhone 日历几乎马上更新；点通知或事件里的链接，打开客人卡片，一键复制名字并打开收件箱
 ```
 
 ## 文件说明
@@ -67,6 +67,8 @@ https://<worker 网址>/check?token=<VERIFY_TOKEN>
 ```
 
 看到 `✅ Signed in to iCloud` 和 `✅ Found "Andy Auto AC Regas"` 就表示 iCloud 连接正常。
+
+确认线上跑的是最新代码：Cloudflare → `fb-booking-andy-auto` → Edit code，搜索最近一次新增的函数名称（只看，不要按 Deploy）。
 
 ## 安全提醒
 
