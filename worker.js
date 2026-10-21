@@ -81,8 +81,37 @@ function config(env) {
   };
 }
 
-function conversationLink(cfg, psid) {
-  return cfg.linkTemplate ? cfg.linkTemplate.replaceAll('{psid}', psid) : '';
+// LINK_TEMPLATE 可用的占位符：
+//   {psid}    客人的 psid
+//   {conv}    对话 ID（t_ 后面的数字）
+//   {linkid}  对话链接里 /inbox/ 后面的数字
+//   {fblink}  Meta 给的完整对话链接（https://www.facebook.com/...）
+async function conversationLink(cfg, env, psid) {
+  let link = cfg.linkTemplate;
+  if (!link) return '';
+  link = link.replaceAll('{psid}', psid);
+  if (!/\{(conv|linkid|fblink)\}/.test(link)) return link;
+
+  try {
+    const r = await fetch(
+      `https://graph.facebook.com/${cfg.graph}/me/conversations?platform=messenger` +
+      `&user_id=${psid}&fields=id,link&access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN)}`,
+    );
+    const j = await r.json();
+    const c = (j.data || [])[0];
+    if (!c) { console.error('conversation lookup', JSON.stringify(j)); return ''; }
+    const conv = String(c.id || '').replace(/^t_/, '');
+    const path = c.link || '';
+    const linkid = (path.match(/inbox\/(\d+)/) || [])[1] || '';
+    console.log('conversation', c.id, path);
+    return link
+      .replaceAll('{conv}', conv)
+      .replaceAll('{linkid}', linkid)
+      .replaceAll('{fblink}', path ? `https://www.facebook.com${path}` : '');
+  } catch (e) {
+    console.error('conversation lookup', e);
+    return '';
+  }
 }
 
 // ---------- 你发出的确认消息 → 日历 ----------
@@ -93,7 +122,7 @@ async function onPageMessage(ev, env) {
   if (!text.toLowerCase().includes(cfg.trigger.toLowerCase())) return;
 
   const psid = ev.recipient.id;
-  const link = conversationLink(cfg, psid);
+  const link = await conversationLink(cfg, env, psid);
   console.log('booking message, psid =', psid);
 
   try {
@@ -103,7 +132,7 @@ async function onPageMessage(ev, env) {
 
     const name = (await getCustomerName(psid, env)) || '客人';
     const created = await createEvent(
-      { ...b, name, link, original: text, mid: ev.message.mid || `${psid}-${text}` },
+      { ...b, name, link, psid, original: text, mid: ev.message.mid || `${psid}-${text}` },
       cfg, env,
     );
     if (created) {
@@ -122,7 +151,7 @@ async function onCustomerMessage(ev, env) {
   const cfg = config(env);
   const psid = ev.sender.id;
   const name = (await getCustomerName(psid, env)) || '客人';
-  await bark(env, `💬 ${name}`, ev.message.text, conversationLink(cfg, psid));
+  await bark(env, `💬 ${name}`, ev.message.text, await conversationLink(cfg, env, psid));
 }
 
 // ---------- 解析确认消息 ----------
@@ -285,6 +314,7 @@ async function createEvent(b, cfg, env) {
   if (b.phone) lines.push(`电话：${b.phone}`);
   if (b.link) lines.push(`对话：${b.link}`);
   if (b.note) lines.push(`备注：${b.note}`);
+  lines.push(`客人ID：${b.psid}`);
   lines.push('', '—— 原始确认消息 ——', b.original);
 
   const res = await fetch(
