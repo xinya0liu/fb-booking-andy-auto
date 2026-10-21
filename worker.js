@@ -39,6 +39,8 @@
  *   BARK_URL             一个或多个 Bark 网址，用逗号隔开
  * 可选：
  *   ICLOUD_CALENDAR_URL  直接指定日历网址（一般不用填，Worker 会按名称自动找）
+ *   SHORTCUT_NAME        iPhone 捷径的名称（例如 Open Customer）。设了就让链接直接执行捷径：
+ *                        复制客人名字并打开 Business Suite；没设就打开客人卡片网页
  *   INBOX_URL            客人卡片“打开收件箱”按钮的网址，默认 Business Suite 收件箱
  *   FORWARD_INCOMING     "true" = 客人发来的消息也推 Bark
  *   BARK_GROUP           Bark 分组，默认 "Bookings"
@@ -159,7 +161,7 @@ async function onPageMessage(ev, env, origin) {
   // 消息里写了 "Name: …" 就用它，否则用 Facebook 上的名字
   const typed = readFields(text).name;
   const shown = typed || name || 'Customer';
-  const ctx = { env, cfg, psid, mid, text, manual, name: shown, link: cardLink(origin, typed || name) };
+  const ctx = { env, cfg, psid, mid, text, manual, name: shown, link: cardLink(origin, typed || name, env) };
 
   try {
     if (action === 'confirm') await doConfirm(ctx);
@@ -696,7 +698,7 @@ async function onCustomerMessage(ev, env, origin) {
   const cfg = config(env);
   const psid = ev.sender.id;
   const name = await getCustomerName(psid, env);
-  await bark(env, `💬 ${name || 'Customer'}`, ev.message.text, cardLink(origin, name));
+  await bark(env, `💬 ${name || 'Customer'}`, ev.message.text, cardLink(origin, name, env));
 }
 
 // ================= 读取消息 =================
@@ -1205,9 +1207,15 @@ async function getCustomerName(psid, env) {
   return null;
 }
 
-// 通知和日历里的链接：打开客人卡片
-function cardLink(origin, name) {
-  if (!origin || !name) return '';
+// 通知和日历里的链接：
+//   设了 SHORTCUT_NAME → 直接执行 iPhone 的捷径（复制名字 + 打开 Business Suite），点一下就完成
+//   没设            → 打开客人卡片网页（按一个按钮复制名字并打开收件箱）
+function cardLink(origin, name, env = {}) {
+  if (!name) return '';
+  if (env.SHORTCUT_NAME) {
+    return `shortcuts://run-shortcut?name=${encodeURIComponent(env.SHORTCUT_NAME)}&input=text&text=${encodeURIComponent(name)}`;
+  }
+  if (!origin) return '';
   return `${origin}/c?n=${encodeURIComponent(name)}`;
 }
 
