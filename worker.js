@@ -37,7 +37,8 @@
  *   ICLOUD_APP_PASSWORD  App 专用密码（xxxx-xxxx-xxxx-xxxx），设为 Secret
  *   ICLOUD_CALENDAR      iCloud 日历的名称，默认 "客人预约"
  *   BARK_URL             一个或多个 Bark 网址，用逗号隔开
- *   LINK_TEMPLATE        对话链接模板，可用 {psid} {conv} {linkid} {fblink}
+ *   LINK_TEMPLATE        对话链接模板，可用 {psid} {page} {conv} {linkid} {fblink}
+ *                        （不知道用哪种：打开 /links?token=你的VERIFY_TOKEN 测试）
  * 可选：
  *   ICLOUD_CALENDAR_URL  直接指定日历网址（一般不用填，Worker 会按名称自动找）
  *   LINK_DIRECT          "true" = 对话链接不经过 Worker 中转
@@ -47,7 +48,7 @@
  *   TIMEZONE             默认 "Australia/Brisbane"
  *   GRAPH_VERSION        默认 "v23.0"
  *   ANTHROPIC_API_KEY    读对话、AI 整理资料、自动回复客人需要
- *   AUTO_REPLY           "false" = 一键确认时不自动发消息给客人（默认会发）
+ *   AUTO_REPLY           "false" = Booking confirmed / updated 时不自动发消息给客人（默认会发）
  *   CONFIRM_HEADER       自动确认消息的第一行，默认 "✅ Booking details – Andy Auto AC Regas"
  *   UPDATE_HEADER        自动更新消息的第一行，默认 "🔄 Updated booking details – Andy Auto AC Regas"
  *   CONFIRM_FOOTER       自动确认 / 更新消息的最后一行
@@ -73,6 +74,14 @@ export default {
         return new Response('forbidden', { status: 403 });
       }
       return checkPage(env);
+    }
+
+    // 对话链接测试页
+    if (req.method === 'GET' && url.pathname === '/links') {
+      if (!env.VERIFY_TOKEN || url.searchParams.get('token') !== env.VERIFY_TOKEN) {
+        return new Response('forbidden', { status: 403 });
+      }
+      return linksPage(env, url.origin);
     }
 
     // Meta webhook 验证
@@ -153,7 +162,7 @@ async function onPageMessage(ev, env, origin) {
 
   const [name, rawLink] = await Promise.all([
     getCustomerName(psid, env),
-    conversationLink(cfg, env, psid),
+    conversationLink(cfg, env, psid, ev.sender.id),
   ]);
   // 消息里写了 "Name: …" 就用它，否则用 Facebook 上的名字
   const typed = readFields(text).name;
@@ -693,7 +702,7 @@ async function notFound(env, name, link, hint) {
 async function onCustomerMessage(ev, env, origin) {
   const cfg = config(env);
   const psid = ev.sender.id;
-  const [name, rawLink] = await Promise.all([getCustomerName(psid, env), conversationLink(cfg, env, psid)]);
+  const [name, rawLink] = await Promise.all([getCustomerName(psid, env), conversationLink(cfg, env, psid, ev.recipient.id)]);
   await bark(env, `💬 ${name || 'Customer'}`, ev.message.text, viaWorker(origin, env, rawLink));
 }
 
@@ -1209,29 +1218,85 @@ function viaWorker(origin, env, link) {
   return `${origin}/go?u=${encodeURIComponent(link)}`;
 }
 
-// LINK_TEMPLATE 占位符：{psid} {conv}（t_ 后面的数字） {linkid}（/inbox/ 后面的数字） {fblink}
-async function conversationLink(cfg, env, psid) {
-  let link = cfg.linkTemplate;
-  if (!link) return '';
-  link = link.replaceAll('{psid}', psid);
-  if (!/\{(conv|linkid|fblink)\}/.test(link)) return link;
-  try {
-    const r = await fetch(`https://graph.facebook.com/${cfg.graph}/me/conversations?platform=messenger` +
-      `&user_id=${psid}&fields=id,link&access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN)}`);
-    const j = await r.json();
-    const c = (j.data || [])[0];
-    if (!c) { console.error('conversation lookup', JSON.stringify(j)); return ''; }
-    const conv = String(c.id || '').replace(/^t_/, '');
-    const path = c.link || '';
-    const linkid = (path.match(/inbox\/(\d+)/) || [])[1] || '';
-    return link
-      .replaceAll('{conv}', conv)
-      .replaceAll('{linkid}', linkid)
-      .replaceAll('{fblink}', path ? `https://www.facebook.com${path}` : '');
-  } catch (e) {
-    console.error('conversation lookup', e);
-    return '';
+// LINK_TEMPLATE 占位符：{psid} 客人编号、{page} 专页编号、{conv} 对话编号（t_ 后面的部分）、
+//   {linkid}（对话链接里 /inbox/ 后面的数字）、{fblink}（Meta 提供的完整对话链接）
+// 不知道该用哪一种时，打开 /links?token=<VERIFY_TOKEN> 测试页逐一试
+async function conversationLink(cfg, env, psid, pageId = '') {
+  const tpl = cfg.linkTemplate;
+  if (!tpl) return '';
+  const vals = { psid, page: pageId || '', conv: '', linkid: '', fblink: '' };
+  if (/\{(conv|linkid|fblink)\}/.test(tpl)) {
+    try {
+      const r = await fetch(`https://graph.facebook.com/${cfg.graph}/me/conversations?platform=messenger` +
+        `&user_id=${psid}&fields=id,link&access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN)}`);
+      const j = await r.json();
+      const c = (j.data || [])[0];
+      if (!c) { console.error('conversation lookup', JSON.stringify(j)); return ''; }
+      Object.assign(vals, convParts(c));
+    } catch (e) {
+      console.error('conversation lookup', e);
+      return '';
+    }
   }
+  return fillLink(tpl, vals);
+}
+
+function convParts(c) {
+  const path = c.link || '';
+  return {
+    conv: String(c.id || '').replace(/^t_/, ''),
+    linkid: (path.match(/inbox\/(\d+)/) || [])[1] || '',
+    fblink: path ? (path.startsWith('http') ? path : `https://www.facebook.com${path}`) : '',
+  };
+}
+
+function fillLink(tpl, v) {
+  return tpl.replace(/\{(psid|page|conv|linkid|fblink)\}/g, (_, k) => v[k] || '');
+}
+
+// 链接测试页：列出最近的对话，每个对话给几种不同写法的链接，用 iPhone 点点看哪一种能打开正确的客人
+const LINK_CANDIDATES = [
+  'https://business.facebook.com/latest/inbox/all?asset_id={page}&selected_item_id={psid}&thread_type=FB_MESSAGE',
+  'https://business.facebook.com/latest/inbox/all?asset_id={page}&selected_item_id={conv}&thread_type=FB_MESSAGE',
+  'https://business.facebook.com/latest/inbox/all?asset_id={page}&selected_item_id={linkid}&thread_type=FB_MESSAGE',
+  '{fblink}',
+  'https://business.facebook.com/latest/inbox/messenger?asset_id={page}&selected_item_id={conv}&mailbox_id={page}',
+];
+
+async function linksPage(env, origin) {
+  const cfg = config(env);
+  const graph = `https://graph.facebook.com/${cfg.graph}`;
+  const token = `access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN || '')}`;
+  const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  let html = '';
+  try {
+    const me = await (await fetch(`${graph}/me?fields=id,name&${token}`)).json();
+    if (!me.id) throw new Error(JSON.stringify(me.error || me));
+    const list = await (await fetch(`${graph}/me/conversations?platform=messenger&limit=8` +
+      `&fields=id,link,updated_time,participants&${token}`)).json();
+    if (!list.data) throw new Error(JSON.stringify(list.error || list));
+
+    html += `<p>Page: <b>${esc(me.name)}</b> (${esc(me.id)})</p>`;
+    html += `<p>Current LINK_TEMPLATE:<br><code>${esc(cfg.linkTemplate || '(empty)')}</code></p>`;
+    for (const c of list.data) {
+      const who = (c.participants?.data || []).find(x => x.id !== me.id) || {};
+      const vals = { psid: who.id || '', page: me.id, ...convParts(c) };
+      html += `<h2>${esc(who.name || '(unknown)')}</h2><p class="m">psid ${esc(vals.psid)} · conv ${esc(vals.conv)} · linkid ${esc(vals.linkid || '-')}</p><ol>`;
+      LINK_CANDIDATES.forEach(tpl => {
+        const url = fillLink(tpl, vals);
+        html += `<li><a href="${esc(url)}" target="_blank">Try link</a> · <a href="${esc(`${origin}/go?u=${encodeURIComponent(url)}`)}" target="_blank">via /go</a>` +
+          `<br><code>${esc(tpl)}</code></li>`;
+      });
+      html += '</ol>';
+    }
+  } catch (e) {
+    html = `<p>❌ ${esc(e.message)}</p>`;
+  }
+  return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Link test</title><style>body{font:16px -apple-system,sans-serif;margin:16px;max-width:720px}code{font-size:12px;word-break:break-all;color:#555}
+li{margin:10px 0}h2{margin:24px 0 4px;font-size:18px}.m{color:#777;font-size:13px;margin:0}</style>
+<h1>Conversation link test</h1><p>For one customer you know, tap each link on your iPhone. Note which number opens <b>that customer's</b> chat, and whether it works directly or via /go.</p>${html}`,
+    { headers: { 'content-type': 'text/html; charset=utf-8' } });
 }
 
 // BARK_URL 可以放多个网址，用逗号隔开
