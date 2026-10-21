@@ -1,104 +1,160 @@
 # 使用说明
 
-给专页管理员看的。只要照这里的模板回复客人，日历就会自动更新。
+给专页管理员看的。
 
-## 最重要的三条规则
+## 只要记住这两件事
 
-1. **一定要在那位客人自己的对话里发出。** 系统是靠“这条消息发给了谁”来认客人的。在 A 客人的对话里发取消，系统只会去找 A 客人的预约。
-2. **一条消息只用一个关键词。** 新建用 `Booking confirmed`，修改用 `Booking updated`，取消用 `Booking cancelled`。
-3. **每次都看一下 Bark 通知。** 成功和失败都会推送。收到 ⚠️ 就表示日历没有更新，要手动处理或重发。
+1. **消息的开头决定会发生什么。** 只有下面五个开头会触发，其他任何消息都不会。
+2. **每次都看一下 Bark。** 成功、失败、撞时间都会通知。收到 ⚠️ 就表示日历没有照预期更新，要处理一下。
 
-## 三个模板
+另外，一定要在**那位客人自己的对话里**发。系统是靠对话来认客人的。
 
-建议存成 Business Suite 的“已保存的回复”，两位管理员共用。
+## 五个开头
 
-### 1. 新建预约
+| 开头 | 做什么 | 用 AI | 自动回复客人 |
+|---|---|---|---|
+| `Booking confirmed` | 新建预约，资料从对话整理 | ✅ | ✅ |
+| `Booking updated` | 修改预约，从对话找出改动 | ✅ | ✅ |
+| `Booked you in` | 新建预约，只照消息里写的 | ❌ | ❌ |
+| `Booking change` | 修改预约，只照消息里写的 | ❌ | ❌ |
+| `Booking cancelled` | 删除预约 | ❌ | ❌ |
+
+**记法：** `Booking confirmed` / `Booking updated` 交给 AI，并且会自动回复客人；`Booked you in` / `Booking change` 是你自己写好资料，只更新日历。
+
+- 开头前面可以有 emoji（例如 `✅`、`🔄`、`❌`），有没有空格都可以。
+- 不分大小写。`Booking changed`、`Booking canceled`（一个 l）也认得。
+- 必须是**消息的开头**。“Sure, your booking confirmed time is…” 这种句子不会触发。
+- 其他写法都**不会触发，也不会有任何提醒**，例如 `Booking rescheduled`、`Booking changes`。建议全部存成“已保存的回复”，用点选的，不要手打。
+
+## 平常最常用的三句（AI）
+
+存成 Business Suite 的“已保存的回复”，两位管理员共用：
 
 ```
-✅ Booking confirmed – Andy Auto AC Regas
-Service: Car AC regas
-Price: $150
-Time: Friday 30/10 10am
-Address: 56 Smith St, Eagleby
-Mobile: 0412 345 678
+Booking confirmed 👍 I'll send through your booking details shortly.
+```
+
+```
+Booking updated 👍 I'll send through your updated booking details shortly.
+```
+
+```
+Booking cancelled – your booking for Sunday 25/10 2pm has been cancelled.
+```
+
+### Booking confirmed：谈好了就发
+
+系统会读这位客人**最近 30 天**的对话，AI 整理出时间、服务、价格、地址、电话、车型和备注，写进日历，然后几秒内自动回复客人：
+
+```
+✅ Booking details – Andy Auto AC Regas
+Service: AC check and regas
+Price: $220
+Time: Sunday 25/10, 2:00pm
+Address: 12 Test Street, Eagleby
+Vehicle: 2016 Toyota Camry
 
 Any changes, reply here or call Andy on 0478 701 289. See you then!
 ```
 
-- `Time:` 这一行**必须有**，其他栏位可以省略。
-- 可以自己加任何“标签: 内容”的行，例如 `Vehicle: Corolla 2018`、`Notes: need change parts`，都会放进日历的备注。
-- 开头那行和最后的客套话（包括 Andy 的电话）不会放进日历。
+- AI 会采用**最后谈定**的内容：最后一次报的价格、客人最后接受的时间。
+- 你的电话 0478 701 289 不会被当成客人的电话。
+- 发给客人的消息**不包含内部备注**（例如 “need change parts”）。
+- 想指定某一项，就在同一条消息后面加一行，你写的优先：
+  ```
+  Booking confirmed 👍 I'll send through your booking details shortly.
+  Price: $199
+  ```
 
-### 2. 修改预约（改期、改价格、补电话……）
+### Booking updated：有改动就发
+
+在对话里跟客人谈好改动后发这一句。系统会把**日历上目前的资料**和对话一起交给 AI，找出改了什么（时间、价格、地址……），只更新有变的部分，然后自动回复客人：
 
 ```
-🔄 Booking updated – Andy Auto AC Regas
-Time: Saturday 31/10 2pm
+🔄 Updated booking details – Andy Auto AC Regas
+...
 ```
 
-- **只写有变的行。** 没写的资料保持不变。
-- 例如只改价格和电话：
-  ```
-  🔄 Booking updated – Andy Auto AC Regas
-  Price: $200
-  Mobile: 0499 999 999
-  ```
+- 同样可以在后面加一行指定，例如 `Time: Saturday 2pm`，你写的优先。
+- 对话里找不到任何改动时，不会乱改，Bark 会提醒你。
+- 修改的是这位客人**最近的那一个**预约。客人有好几个预约、要改后面那个的话，请在 iPhone 日历手动改。
+
+### 资料不对或缺了怎么办
+
+在对话里跟客人讲清楚（例如 “Just to confirm, the address is 12 Test Street”），再发一次 `Booking updated 👍 …`。
+
+### Booking cancelled：取消
+
+- 写上**原本的日期**，客人有多个预约时，系统靠这个日期找到要取消的那一个。
+- 没写日期的话，取消这位客人最近的那一个预约。
+- 取消不用 AI，也不会另外回复客人（你这条消息本身就是通知）。
+
+## 不用 AI 的两个模板
+
+适合你已经把资料写好、只想更新日历的时候。客人看到的就是你这条消息，系统**不会**再自动回复。
+
+### Booked you in：新建
+
+```
+Booked you in – Andy Auto AC Regas
+Service: Car AC
+Price: $
+Time:
+Address:
+
+Any changes, reply here or call Andy on 0478 701 289. See you then!
+```
+
+- `Time:` **一定要填**，没填会收到 ⚠️，不会建立。
+- 可以自己加任何“标签: 内容”的行，例如 `Mobile: 0412 345 678`、`Vehicle: Corolla 2018`、`Notes: need change parts`，都会放进日历备注。
+- 想指定客人名字，加一行 `Name: John Smith`。
+
+### Booking change：修改
+
+```
+Booking Change – Andy Auto AC Regas
+Time:
+Address:
+
+Any changes, reply here or call Andy on 0478 701 289. See you then!
+```
+
+- 只填有变的行。**空着的行会被忽略**，原来的资料保持不变。
 - 时间可以只写一部分：`Time: 3pm` 表示同一天改成 3 点；`Time: Monday` 表示改到星期一、时间不变。
-- 修改的是这位客人**最近的那一个**预约。如果客人有好几个预约，要改后面的那个，请直接在 iPhone 日历里手动改。
-
-### 3. 取消预约
-
-```
-❌ Booking cancelled – Andy Auto AC Regas
-Your booking for Friday 30/10 10am has been cancelled. Feel free to message us anytime to rebook.
-```
-
-- 消息里写上**原本的日期**。客人有多个预约时，系统靠这个日期找到要取消的那一个。
-- 没写日期的话，取消的是这位客人最近的那一个预约。
-
-## 关键词规则
-
-- 不分大小写，出现在消息任何位置都算，前面有没有 emoji 都没关系。
-- 美式拼法 `Booking canceled` 也认得。
-- 只认英文，写中文“预约确认”不会触发。
-- 一条消息同时有多个关键词时，优先顺序是：取消 → 修改 → 新建。
-- 平时聊天如果刚好写到这几个词（例如 “your booking updated time…”），也会被当成指令。
 
 ## 时间的写法
 
-以下面这个日子为例：今天是 **21/10 星期三**。
+AI 会自己看懂对话里的时间。下面的规则适用于你**自己写的 `Time:` 行**。以 **22/10 星期四**为例：
 
 | 你写的 | 系统理解成 |
 |---|---|
-| `tomorrow 10am` / `tmr 3pm` | 周四 22/10 |
-| `day after tomorrow 9am` | 周五 23/10 |
-| `Thursday 2pm` | 周四 22/10（接下来最近的星期四） |
-| `next Thursday 2pm` | 周四 29/10（下个星期的星期四） |
-| `Wednesday 9am` | 周三 28/10（今天就是星期三，所以算下星期） |
-| `this Wednesday 4pm` / `today 4pm` | 周三 21/10（今天） |
+| `tomorrow 10am` / `tmr 3pm` | 周五 23/10 |
+| `day after tomorrow 9am` | 周六 24/10 |
+| `Saturday 2pm` | 周六 24/10（接下来最近的星期六） |
+| `next Saturday 2pm` | 周六 31/10（下个星期的星期六） |
+| `Thursday 9am` | 周四 29/10（今天就是星期四，所以算下星期） |
+| `this Thursday 4pm` / `today 4pm` | 周四 22/10（今天） |
 | `30/10 7:20am` / `30 Oct 7:20am` / `Oct 30th 7:20am` | 周五 30/10 |
-| `30/10/2026` / `2026-10-30` | 周五 30/10 |
 | `Sat 1-3pm` | 周六 24/10 13:00–15:00 |
 | `明天 下午3点` / `下周三 10点半` / `10月30日 15:00` | 也认得 |
 
 - 日期是**澳洲写法：日/月**。`3/11` 是 11 月 3 日。
 - 没写结束时间的话，默认 **90 分钟**。
-- 写了已经过去一个星期以上的日期，会当成**明年**。
-- 星期几和日期对不上时（例如 `Thursday 30/10`，其实 30/10 是星期五），系统**以日期为准**，同时 Bark 会提示 `Day mismatch`，请跟客人再确认。
-- 像 `next week`、`whenever` 这种读不懂的写法，会推送 `⚠️ Booking not saved`。
+- 星期几和日期对不上时（例如 `Thursday 30/10`，其实 30/10 是星期五），以**日期为准**，Bark 会提示 `Day mismatch`。
 
 ## 日历上会看到什么
 
 | 日历栏位 | 内容 |
 |---|---|
 | 标题 | 客人名字 – 服务 价格，例如 `John Smith – Car AC regas $150` |
-| 时间 | `Time:` 那一行 |
-| 地点 | `Address:` 那一行 |
+| 时间 | 预约时间 |
+| 地点 | 地址 |
 | URL | 回到这个客人 Messenger 对话的链接 |
-| 备注 | 消息里所有“标签: 内容”的行 |
+| 备注 | Service、Price、Time、Address、Mobile、Vehicle、Notes 等全部资料 |
 
-- 备注里的电话号码 iPhone 会自动变成可以点的链接，点一下就能打给客人。苹果日历没有专门的电话栏位。
-- 修改预约后，备注里同名的行会**直接换成新的**，最上面会记一笔改动，例如：
+- AI 建立的预约，备注第一行是 `Auto-filled from chat`。
+- 备注里的电话 iPhone 会自动变成可以点的链接，点一下就能打给客人。
+- 修改后，备注里同名的行会**直接换成新的**，最上面记一笔改动，例如：
   ```
   Updated: Price, Mobile
   Rescheduled from Fri 30/10 10:00
@@ -106,8 +162,7 @@ Your booking for Friday 30/10 10am has been cancelled. Feel free to message us a
   Service: Car AC regas
   Price: $200
   Time: Sat 31/10 14:00
-  Address: 56 Smith St, Eagleby
-  Mobile: 0499 999 999
+  ...
   ```
 - 你可以在 iPhone 上手动改事件（拖时间、加提醒等），系统之后修改时会读取最新的版本，你加的提醒会保留。
 
@@ -115,38 +170,45 @@ Your booking for Friday 30/10 10am has been cancelled. Feel free to message us a
 
 | 通知 | 意思 | 要做什么 |
 |---|---|---|
-| 📅 Booking added | 新预约已写入日历 | 看一下时间对不对 |
-| 🔄 Booking rescheduled | 已改期，会写“was …”原本的时间 | 无 |
-| 🔄 Booking updated | 已修改其他资料 | 无 |
+| 📅 Booking added | 新预约已写入日历，下面列出整理的资料 | 核对一下 |
+| ✉️ Confirmation sent to the customer | 已自动回复客人 | 无 |
+| ℹ️ Not found in chat: Price, Address | 对话里找不到这几项，日历上空着 | 需要的话在对话里补问，再发 `Booking updated` |
+| ⚠️ Overlaps with: … | 同一时段日历里已有别的事件 | 确认是不是撞单了 |
+| 🔄 Booking rescheduled / updated | 已修改，会写“was …”原本的时间 | 无 |
 | ❌ Booking cancelled | 已从日历删除 | 无 |
-| ℹ️ Already in calendar | 这位客人同一时间已经有预约，没有重复建立 | 如果是想改资料，请改用 Booking updated |
+| ℹ️ Already in calendar | 这位客人同一时间已经有预约，没有重复建立 | 想改资料请用 `Booking updated` |
 | ℹ️ This customer has other upcoming bookings | 这位客人还有别的预约 | 确认改到或取消的是对的那一个 |
 | ⚠️ Day mismatch | 星期几和日期对不上，已按日期写入 | 跟客人确认 |
-| ⚠️ Booking not saved / updated / cancelled | 失败了，下面会写原因 | 按原因改正后重发，或手动改日历 |
+| ⚠️ Confirmation NOT sent to the customer | 预约已写入，但自动回复失败（通常是客人超过 24 小时没发消息） | 复制通知里附的消息，自己发给客人 |
+| ⚠️ AI unavailable | AI 出问题，已按你消息里写的资料处理，没有回复客人 | 自己确认资料，必要时发给客人 |
+| ⚠️ Booking not saved / updated / cancelled | 失败了，下面写原因和怎么补发 | 照提示处理 |
 | ⚠️ Booking not found | 找不到这位客人的预约 | 检查是不是发错对话；不然手动改日历 |
-| 💬 客人名字 | 客人发来消息（只有开启了 FORWARD_INCOMING 才会有） | 回复客人 |
+| 💬 客人名字 | 客人发来消息（开启了 FORWARD_INCOMING 才有） | 回复客人 |
 
 点通知可以直接打开那个客人的对话。
 
 ## 常见问题
 
-**同一位客人第二次预约怎么办？**
+**客人超过 24 小时才回来确认？**
+Meta 不允许专页在客人最后一条消息 24 小时后主动发消息。预约照样会写入，Bark 会附上确认消息，复制后自己发。
+
+**客人用照片或语音给资料？**
+AI 只读文字。找不到的项目 Bark 会写 “Not found in chat”，在对话里用文字补问一下，或在关键词那条消息后面加一行。
+
+**老客人隔很久再约？**
+AI 只读最近 30 天的对话。更早给过的地址、电话不会被抓到，请客人重新确认，或自己加一行。
+
+**同一位客人第二次预约？**
 照样发 `Booking confirmed`，会建立第二个事件。只有同一时间的才会被当成重复。
 
-**想改资料却发成了 Booking confirmed？**
-如果时间不同，会多出一个预约，请在日历里删掉多的那个，再用 `Booking updated` 修改。如果时间相同，什么都不会改（会收到 `Already in calendar`）。
-
-**我在 iPhone 上手动建的预约，可以用模板改期或取消吗？**
-不行。系统只会处理它自己建立的事件，手动建的事件它不会碰，请继续手动处理。
-
-**Google 日历时期建的旧事件呢？**
-没有搬过来，只留在 Google 日历里。
+**我在 iPhone 上手动建的预约，可以用这些开头改期或取消吗？**
+不行。系统只会处理它自己建立的事件，手动建的事件它不会碰。
 
 **有些事件的备注里有 `Customer ID:` 这一行？**
-那是刚改用 iCloud 时最早建立的几个事件。系统靠这一行找到它们，请不要删掉。之后建立的事件，客人编号藏在事件内部，备注里不会再有这一行。
+那是刚改用 iCloud 时最早建立的几个事件。系统靠这一行找到它们，请不要删掉。
 
 **另一位管理员也想看日历？**
 在日历 App 里点 “Andy Auto AC Regas” 旁边的 ⓘ →“添加人员”，输入他的 Apple ID。
 
-**另一位管理员发模板也有效吗？**
-有效。对 Meta 来说两位管理员发的都是“专页发出的消息”。日历上不会标注是谁确认的。
+**另一位管理员发也有效吗？**
+有效。对 Meta 来说两位管理员发的都是“专页发出的消息”。

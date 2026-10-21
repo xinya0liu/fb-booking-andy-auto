@@ -2,7 +2,7 @@
 
 系统已经在运作。这份文件用在：重新部署、换一个 Apple ID、换一个专页，或者交给别人接手时照着重建。
 
-需要准备的账号：Facebook 专页（管理员权限）、Meta 开发者账号、Cloudflare 账号、GitHub 账号、开启了双重认证的 Apple ID、装了 Bark 的 iPhone。
+需要准备的账号：Facebook 专页（管理员权限）、Meta 开发者账号、Cloudflare 账号、GitHub 账号、开启了双重认证的 Apple ID、装了 Bark 的 iPhone、Anthropic 账号（AI 用）。
 
 ## 1. iCloud 日历
 
@@ -30,7 +30,15 @@ iPhone 的“设置”里**没有**这个选项，只能在网页上生成。
 
 多个网址用逗号连起来，填进 `BARK_URL`。
 
-## 4. Cloudflare Worker
+## 4. Anthropic API Key（AI 整理对话用）
+
+1. 到 console.anthropic.com 注册并登录。
+2. 在 Billing 充值少量额度（最低额度就能用很久）。
+3. 在 API Keys 新建一个 key，名称例如 `fb-booking`，复制下来，之后填进 `ANTHROPIC_API_KEY`。
+
+没有这个 key 的话，`Booking confirmed` / `Booking updated` 只能照消息里写的栏位处理，不会读对话，也不会自动回复客人。
+
+## 5. Cloudflare Worker
 
 Worker 名称是 `fb-booking-andy-auto`，连接这个 GitHub 仓库自动部署：
 
@@ -54,6 +62,7 @@ Worker 名称是 `fb-booking-andy-auto`，连接这个 GitHub 仓库自动部署
 | `ICLOUD_CALENDAR` | 普通 | 日历名称，例如 `Andy Auto AC Regas`。不填的话默认找 `客人预约` |
 | `BARK_URL` | Secret | 一个或多个 Bark 网址，用逗号隔开 |
 | `LINK_TEMPLATE` | 普通 | 对话链接模板，见下面说明 |
+| `ANTHROPIC_API_KEY` | Secret | 第 4 步的 API Key。读对话、AI 整理、自动回复客人需要 |
 
 **选填**
 
@@ -66,8 +75,11 @@ Worker 名称是 `fb-booking-andy-auto`，连接这个 GitHub 仓库自动部署
 | `LINK_DIRECT` | 关 | 设成 `true` 时，通知和日历里的链接直接指向 Facebook，不经过 Worker 中转 |
 | `ICLOUD_CALENDAR_URL` | 自动 | 直接指定日历网址。一般不用填，Worker 会按名称自动找 |
 | `GRAPH_VERSION` | `v23.0` | Meta Graph API 版本 |
-| `ANTHROPIC_API_KEY` | 不用 | 填了的话，时间格式看不懂时会请 AI 帮忙解析确认消息 |
-| `AI_MODEL` | `claude-haiku-5-5` | 上面那个功能用的模型 |
+| `AUTO_REPLY` | 开 | 设成 `false` 时，`Booking confirmed` / `updated` 照样整理和写日历，但不自动发消息给客人 |
+| `CONFIRM_HEADER` | `✅ Booking details – Andy Auto AC Regas` | 自动确认消息的第一行。**不能**以五个开头之一开始，否则会再次触发 |
+| `UPDATE_HEADER` | `🔄 Updated booking details – Andy Auto AC Regas` | 自动更新消息的第一行，同上 |
+| `CONFIRM_FOOTER` | `Any changes, reply here or call Andy on 0478 701 289. See you then!` | 自动消息的最后一行 |
+| `AI_MODEL` | `claude-haiku-5-5` | AI 用的模型 |
 
 ### LINK_TEMPLATE
 
@@ -86,36 +98,37 @@ https://business.facebook.com/latest/inbox/all?selected_item_id={psid}
 
 链接默认经过 Worker 的 `/go` 中转，在 iPhone 上比较容易正确打开 Facebook。
 
-## 5. Meta App 和 Webhook
+## 6. Meta App 和 Webhook
 
-1. 在 developers.facebook.com 的 App 里加入 **Messenger** 产品，连接专页。
+1. 在 developers.facebook.com 的 App 里加入 **Messenger** 产品，连接专页。App 要切换成 **Live** 模式。
 2. Webhooks 设置：
    - 回调网址：Worker 的网址（例如 `https://fb-booking-andy-auto.<账号>.workers.dev/`）
    - 验证令牌：跟 `VERIFY_TOKEN` 一样
 3. 订阅栏位勾选 **`messages`** 和 **`message_echoes`**。少了 `message_echoes`，Worker 收不到你们发出的消息，什么都不会发生。
-4. 一个 App 只能设一个回调网址。如果以前有别的 Worker 在接收（例如旧的 Bark 通知 Worker），可以由这个 Worker 取代它，并把 `FORWARD_INCOMING` 设成 `true`。
+4. 权限：`pages_messaging` 显示 “Ready for testing”（标准访问）就够用。只处理自己专页的消息，实测可以收到一般客人的对话、读取对话和发消息。**不要**按 “Add to App Review”：它会要求申请成为 Tech Provider，那是给帮其他商家开发软件的公司用的，而且不能撤销。
+5. 一个 App 只能设一个回调网址。如果以前有别的 Worker 在接收（例如旧的 Bark 通知 Worker），可以由这个 Worker 取代它，并把 `FORWARD_INCOMING` 设成 `true`。
 
-## 6. 检查和测试
+## 7. 检查和测试
 
 1. 浏览器打开 `https://<worker 网址>/check?token=<VERIFY_TOKEN>`，应该看到：
    ```
    ✅ Signed in to iCloud.
    ✅ Found "Andy Auto AC Regas". Bookings will be saved there.
    ```
-2. 用个人 Facebook 账号给专页发一条消息，然后在 Business Suite 的这个对话里依次发：
-   ```
-   ✅ Booking confirmed – Andy Auto AC Regas
-   Service: Test
-   Price: $1
-   Time: tomorrow 10am
-   Address: Test address
-   ```
-   ```
-   🔄 Booking updated – Andy Auto AC Regas
-   Time: tomorrow 2pm
-   ```
-   ```
-   ❌ Booking cancelled – Andy Auto AC Regas
-   Your booking for tomorrow has been cancelled.
-   ```
-3. 每一步都应该收到 Bark 通知，日历也跟着变。
+2. 本地测试（不需要任何密码）：`node tests/mock-icloud-test.mjs`，应该全部显示 ✓。
+3. 请一位**跟 App 没有任何关系**的朋友扮演客人，按下面的对话测试（以星期四为例）：
+
+   | 谁 | 消息 |
+   |---|---|
+   | 朋友 | Hi, my car AC is blowing warm air. How much for a check? It's a 2016 Toyota Camry. |
+   | 你 | Hi! An AC check is $150. If it needs a regas as well it's $220 all up. |
+   | 朋友 | Ok let's do the check and regas then. |
+   | 你 | No worries, that'll be $220. What's your address and best contact number? |
+   | 朋友 | 12 Test Street, Eagleby. My mobile is 0400 123 456 |
+   | 你 | Thanks! I can do Saturday 10am or Sunday 2pm. Or call Andy on 0478 701 289 if easier. |
+   | 朋友 | Saturday doesn't work, Sunday 2pm is good. Oh and the car will be in the driveway. |
+   | 你 | Booking confirmed 👍 I'll send through your booking details shortly. |
+
+   应该看到：朋友收到自动确认消息（$220、星期日 2:00pm、电话是 0400 123 456 而不是你的号码）；日历出现事件；Bark 写 “Confirmation sent”。
+4. 再测修改：朋友说想改到 4pm，你回复同意后发 `Booking updated 👍 I'll send through your updated booking details shortly.`
+5. 最后取消：`Booking cancelled – your booking for Sunday … 4pm has been cancelled.`
