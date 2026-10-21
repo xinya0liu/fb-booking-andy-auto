@@ -1270,13 +1270,28 @@ async function linksPage(env, origin) {
   const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   let html = '';
   try {
-    const me = await (await fetch(`${graph}/me?fields=id,name&${token}`)).json();
-    if (!me.id) throw new Error(JSON.stringify(me.error || me));
     const list = await (await fetch(`${graph}/me/conversations?platform=messenger&limit=8` +
       `&fields=id,link,updated_time,participants&${token}`)).json();
     if (!list.data) throw new Error(JSON.stringify(list.error || list));
 
-    html += `<p>Page: <b>${esc(me.name)}</b> (${esc(me.id)})</p>`;
+    // 专页编号：先问 Meta；没有权限的话，用“每个对话都有的那个参与者”
+    const me = { id: '', name: '' };
+    try {
+      const j = await (await fetch(`${graph}/me?fields=id&${token}`)).json();
+      if (j.id) me.id = j.id;
+    } catch { /* 没有权限就用下面的方法 */ }
+    const count = {};
+    for (const c of list.data) for (const x of c.participants?.data || []) {
+      count[x.id] = (count[x.id] || 0) + 1;
+      if (x.id === me.id) me.name = x.name;
+    }
+    if (!me.id) {
+      const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
+      if (top && (list.data.length === 1 ? false : top[1] === list.data.length)) me.id = top[0];
+    }
+    for (const c of list.data) for (const x of c.participants?.data || []) if (x.id === me.id) me.name = x.name;
+
+    html += `<p>Page: <b>${esc(me.name || '(unknown)')}</b> (${esc(me.id || 'unknown')})</p>`;
     html += `<p>Current LINK_TEMPLATE:<br><code>${esc(cfg.linkTemplate || '(empty)')}</code></p>`;
     for (const c of list.data) {
       const who = (c.participants?.data || []).find(x => x.id !== me.id) || {};
