@@ -24,6 +24,7 @@
  *   TIMEZONE           默认 "Australia/Brisbane"
  *   DEFAULT_MINUTES    没写结束时间时的时长，默认 90
  *   GRAPH_VERSION      默认 "v23.0"
+ *   LINK_DIRECT        "true" = 对话链接不经过 Worker 中转
  *   ANTHROPIC_API_KEY  填了就会在格式看不懂时用 AI 解析
  *   AI_MODEL           默认 "claude-haiku-5-5"
  */
@@ -31,6 +32,13 @@
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
+
+    // 对话链接中转：先在浏览器打开这里，再转去 Facebook，避免被 Facebook App 拦截
+    if (req.method === 'GET' && url.pathname === '/go') {
+      const to = url.searchParams.get('u') || '';
+      if (/^https:\/\/(www|business|m)\.facebook\.com\//.test(to)) return Response.redirect(to, 302);
+      return new Response('bad link', { status: 400 });
+    }
 
     // Meta webhook 验证
     if (req.method === 'GET') {
@@ -51,21 +59,21 @@ export default {
     try { body = JSON.parse(raw); } catch { return new Response('ok'); }
 
     // 先回 200 给 Meta，再在后台处理，避免 Meta 重复推送
-    ctx.waitUntil(handle(body, env).catch(e => console.error('handle error', e)));
+    ctx.waitUntil(handle(body, env, url.origin).catch(e => console.error('handle error', e)));
     return new Response('EVENT_RECEIVED');
   },
 };
 
-async function handle(body, env) {
+async function handle(body, env, origin) {
   if (body.object !== 'page') return;
   for (const entry of body.entry || []) {
     for (const ev of entry.messaging || []) {
       const msg = ev.message;
       if (!msg || !msg.text) continue;
       if (msg.is_echo) {
-        await onPageMessage(ev, env);            // 你（专页）发出的消息
+        await onPageMessage(ev, env, origin);            // 你（专页）发出的消息
       } else if (env.FORWARD_INCOMING === 'true') {
-        await onCustomerMessage(ev, env);        // 客人发来的消息
+        await onCustomerMessage(ev, env, origin);        // 客人发来的消息
       }
     }
   }
@@ -79,6 +87,12 @@ function config(env) {
     linkTemplate: env.LINK_TEMPLATE || '',
     graph: env.GRAPH_VERSION || 'v23.0',
   };
+}
+
+// 把对话链接包一层 Worker 中转（设 LINK_DIRECT=true 可关闭）
+function viaWorker(origin, env, link) {
+  if (!link || !origin || env.LINK_DIRECT === 'true') return link;
+  return `${origin}/go?u=${encodeURIComponent(link)}`;
 }
 
 // LINK_TEMPLATE 可用的占位符：
@@ -116,13 +130,13 @@ async function conversationLink(cfg, env, psid) {
 
 // ---------- 你发出的确认消息 → 日历 ----------
 
-async function onPageMessage(ev, env) {
+async function onPageMessage(ev, env, origin) {
   const cfg = config(env);
   const text = ev.message.text.trim();
   if (!text.toLowerCase().includes(cfg.trigger.toLowerCase())) return;
 
   const psid = ev.recipient.id;
-  const link = await conversationLink(cfg, env, psid);
+  const link = viaWorker(origin, env, await conversationLink(cfg, env, psid));
   console.log('booking message, psid =', psid);
 
   try {
@@ -147,11 +161,11 @@ async function onPageMessage(ev, env) {
 
 // ---------- 客人发来的消息 → Bark ----------
 
-async function onCustomerMessage(ev, env) {
+async function onCustomerMessage(ev, env, origin) {
   const cfg = config(env);
   const psid = ev.sender.id;
   const name = (await getCustomerName(psid, env)) || '客人';
-  await bark(env, `💬 ${name}`, ev.message.text, await conversationLink(cfg, env, psid));
+  await bark(env, `💬 ${name}`, ev.message.text, viaWorker(origin, env, await conversationLink(cfg, env, psid)));
 }
 
 // ---------- 解析确认消息 ----------
