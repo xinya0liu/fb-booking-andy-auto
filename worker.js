@@ -2,30 +2,30 @@
  * FB Messenger bookings → iCloud（苹果）日历 + Bark
  * Cloudflare Worker
  *
- * 在 Business Suite 客人的对话里发出：
+ * 消息开头的关键词决定怎么处理（前面可以有 emoji，不分大小写；聊天中间顺口打出来的不会触发）：
  *
- *   确认（建立预约）
- *     ✅ Booking confirmed – Andy Auto AC Regas
+ *   Booking confirmed  新建：读对话、AI 整理、写入日历，并自动把完整资料发给客人
+ *   Booking updated    修改：读对话找出改了什么、更新日历，并自动把更新后的资料发给客人
+ *   Booking cancelled  取消：删除这位客人的预约（写了日期就删那一天的，否则删最近的一个）
+ *
+ *   用 AI 的两个关键词，消息里如果另外写了 "Time: …"、"Price: …" 这类行，会优先采用。
+ *   资料不对：在对话里讲清楚，再发一次 Booking updated。
+ *   AI 或读对话失败时，消息里有写栏位就照写的内容处理（后备），否则 Bark 提醒怎么补发。
+ *
+ * 常用的三句（存成 Business Suite 的“已保存的回复”）：
+ *   Booking confirmed 👍 I'll send through your booking details shortly.
+ *   Booking updated 👍 I'll send through your updated booking details shortly.
+ *   Booking cancelled – your booking for Sunday 25/10 2pm has been cancelled.
+ *
+ * 只想更新日历、不要 AI、不要自动回复客人时，用这两个开头（照消息里写的栏位处理）：
+ *   Booked you in   新建，必须有 "Time:" 行
+ *   Booking change  修改，只写有变的行
+ *     Booked you in – Andy Auto AC Regas
  *     Service: Car AC regas
  *     Price: $150
  *     Time: Tomorrow 10am
  *     Address: 56 Smith St, Eagleby
  *
- *   改期（只写有变的栏位）
- *     🔄 Booking updated – Andy Auto AC Regas
- *     Time: Friday 31/10 9am
- *
- *   一键确认（只发关键词，资料从对话自动整理，并自动回复客人；需要 ANTHROPIC_API_KEY）
- *     Booking confirmed
- *   也可以顺便写几行，你写的优先，例如：
- *     Booking confirmed
- *     Time: Sunday 7pm
- *
- *   取消（写上原本的日期，客人有多个预约时用来对应）
- *     ❌ Booking cancelled – Andy Auto AC Regas
- *     Your booking for Thursday 30/10 7:20am has been cancelled.
- *
- * 关键词不分大小写、出现在任何位置都算；同一条消息有多个时，顺序是 取消 → 改期 → 确认。
  * Time 可以写：30/10、30/10/2026、2026-10-30、30 Oct、Oct 30、tomorrow、today、
  *   Thursday、this Thursday、next Wednesday、10月30日、明天、周四、下周三 等。
  *
@@ -46,10 +46,11 @@
  *   DEFAULT_MINUTES      没写结束时间时的时长，默认 90
  *   TIMEZONE             默认 "Australia/Brisbane"
  *   GRAPH_VERSION        默认 "v23.0"
- *   ANTHROPIC_API_KEY    一键确认需要；也会在时间格式看不懂时用 AI 解析
+ *   ANTHROPIC_API_KEY    读对话、AI 整理资料、自动回复客人需要
  *   AUTO_REPLY           "false" = 一键确认时不自动发消息给客人（默认会发）
  *   CONFIRM_HEADER       自动确认消息的第一行，默认 "✅ Booking details – Andy Auto AC Regas"
- *   CONFIRM_FOOTER       自动确认消息的最后一行
+ *   UPDATE_HEADER        自动更新消息的第一行，默认 "🔄 Updated booking details – Andy Auto AC Regas"
+ *   CONFIRM_FOOTER       自动确认 / 更新消息的最后一行
  *   AI_MODEL             默认 "claude-haiku-5-5"
  *
  * 检查 iCloud 设置：浏览器打开 https://你的worker网址/check?token=你的VERIFY_TOKEN
@@ -123,10 +124,17 @@ function config(env) {
   };
 }
 
+// 关键词必须在消息的最开头（前面可以有 emoji、空格、标点），聊天中间顺口打出来的不算
+//   Booking confirmed / Booking updated → 读对话、AI 整理、更新日历、自动回复客人
+//   Booked you in / Booking change      → 只照消息里写的栏位更新日历，不用 AI、不回复客人
+//   Booking cancelled                   → 删除预约
 function detectAction(text) {
-  if (/booking\s+cancel+ed/i.test(text)) return 'cancel';
-  if (/booking\s+updated/i.test(text)) return 'update';
-  if (/booking\s+confirmed/i.test(text)) return 'confirm';
+  const head = text.trim().replace(/^[^A-Za-z]+/, '');
+  if (/^booking\s+cancel+ed\b/i.test(head)) return { action: 'cancel' };
+  if (/^booking\s+updated\b/i.test(head)) return { action: 'update', manual: false };
+  if (/^booking\s+confirmed\b/i.test(head)) return { action: 'confirm', manual: false };
+  if (/^booking\s+changed?\b/i.test(head)) return { action: 'update', manual: true };
+  if (/^booked\s+you\s+in\b/i.test(head)) return { action: 'confirm', manual: true };
   return null;
 }
 
@@ -134,13 +142,14 @@ function detectAction(text) {
 
 async function onPageMessage(ev, env, origin) {
   const text = ev.message.text.trim();
-  const action = detectAction(text);
-  if (!action) return;
+  const found = detectAction(text);
+  if (!found) return;
+  const { action, manual } = found;
 
   const cfg = config(env);
   const psid = ev.recipient.id;
   const mid = ev.message.mid || `${psid}-${text}`;
-  console.log(`${action}, psid = ${psid}`);
+  console.log(`${action}${manual ? ' (manual)' : ''}, psid = ${psid}`);
 
   const [name, rawLink] = await Promise.all([
     getCustomerName(psid, env),
@@ -148,7 +157,7 @@ async function onPageMessage(ev, env, origin) {
   ]);
   // 消息里写了 "Name: …" 就用它，否则用 Facebook 上的名字
   const typed = readFields(text).name;
-  const ctx = { env, cfg, psid, mid, text, name: typed || name || 'Customer', link: viaWorker(origin, env, rawLink) };
+  const ctx = { env, cfg, psid, mid, text, manual, name: typed || name || 'Customer', link: viaWorker(origin, env, rawLink) };
 
   try {
     if (action === 'confirm') await doConfirm(ctx);
@@ -165,18 +174,25 @@ async function doConfirm(ctx) {
   const { env, cfg, text, name, link } = ctx;
   const f = readFields(text);
 
-  // 有 Service: 和 Time: 两行 = 完整模板，照写的内容建立；否则从对话里整理资料
-  const fullTemplate = f.time && f.service;
-  if (!fullTemplate) return doConfirmFromChat(ctx, f);
-
-  let w = parseWhenParts(f.time, cfg);
-  if ((!w.date || !w.start) && env.ANTHROPIC_API_KEY) {
-    const ai = await aiParse(text, cfg, env);
-    if (ai) {
-      w = { ...ai.when, warning: '' };
-      f.service ||= ai.service; f.price ||= ai.price; f.address ||= ai.address;
+  // 有 AI 就一律从对话整理（你在消息里写的栏位优先）；没有 AI 才照消息里写的建立
+  let fallback = '';
+  if (ctx.manual) {
+    // Booked you in：只照消息写入日历
+    if (!f.time) throw new Error('No "Time:" line found.');
+  } else if (env.ANTHROPIC_API_KEY) {
+    try {
+      return await doConfirmFromChat(ctx, f);
+    } catch (e) {
+      // 后备：AI 或读对话失败时，消息里有 Time: 就照消息内容建立
+      if (!e.fallback) throw e;
+      if (!f.time) throw new Error(`${e.message}\n\nTo save it without AI, send it with the details, e.g.\nBooked you in\nService: …\nPrice: …\nTime: Sunday 2pm\nAddress: …`);
+      fallback = `⚠️ AI unavailable (${e.message}). Saved from your message only. No confirmation was sent to the customer.`;
     }
+  } else if (!f.time) {
+    throw new Error('No "Time:" line found. Set ANTHROPIC_API_KEY to fill in the details from the chat automatically.');
   }
+
+  const w = parseWhenParts(f.time, cfg);
   if (!w.date) throw new Error("Couldn't read the date. Please check the format.");
   if (!w.start) throw new Error("Couldn't read the time. Please check the format.");
 
@@ -187,7 +203,8 @@ async function doConfirm(ctx) {
   });
   if (!created) return;
 
-  const body = [t.label, f.service, f.price].filter(Boolean).join(' · ') + (w.warning ? `\n${w.warning}` : '');
+  const body = [t.label, f.service, f.price].filter(Boolean).join(' · ') + (w.warning ? `\n${w.warning}` : '') +
+    overlapLine(created.overlaps) + (fallback ? `\n${fallback}` : '');
   await bark(env, `📅 Booking added: ${name}`, body, link);
 }
 
@@ -203,6 +220,9 @@ async function saveNewBooking({ env, cfg, psid, mid, name, link }, { t, service,
     if (same.uid !== uid) await bark(env, `ℹ️ Already in calendar: ${name}`, t.label, link);
     return false;
   }
+
+  const startMs = zonedToUtc(t.start, cfg.tz), endMs = zonedToUtc(t.end, cfg.tz);
+  const overlaps = await findOverlaps(env, cfg, startMs, endMs, uid);
 
   const ics = buildEvent({
     uid,
@@ -222,7 +242,7 @@ async function saveNewBooking({ env, cfg, psid, mid, name, link }, { t, service,
     if (e.status === 412) return false; // Meta 重复推送同一条消息
     throw e;
   }
-  return true;
+  return { overlaps };
 }
 
 // ================= 一键确认：从对话整理资料 =================
@@ -266,6 +286,7 @@ async function doConfirmFromChat(ctx, f) {
     w = { date: ai.date, start: ai.start, end: ai.end, warning: '' };
   }
   const t = buildTimes(w.date, w.start, w.end, cfg.minutes * 60000);
+  assertFuture(t, cfg);
   d.time = t.label;
 
   // 备注：所有栏位，加上你另外写的其他行
@@ -279,8 +300,8 @@ async function doConfirmFromChat(ctx, f) {
   if (!created) return;
 
   // 自动回复客人
-  const msg = customerMessage(d, w, t, env);
-  let sent = { ok: false, error: 'AUTO_REPLY is off' };
+  const msg = customerMessage(d, w, env, env.CONFIRM_HEADER || '✅ Booking details – Andy Auto AC Regas');
+  let sent = null;
   if (env.AUTO_REPLY !== 'false') sent = await sendToCustomer(psid, msg, env);
 
   const missing = ['service', 'price', 'address', 'mobile'].filter(k => !d[k]).map(k => CHAT_FIELDS.find(x => x[0] === k)[1]);
@@ -289,64 +310,117 @@ async function doConfirmFromChat(ctx, f) {
     d.address, d.mobile && `📱 ${d.mobile}`, d.vehicle && `🚗 ${d.vehicle}`, d.notes && `📝 ${d.notes}`,
   ].filter(Boolean);
   if (w.warning) lines.push(w.warning);
+  if (created.overlaps.length) lines.push(overlapLine(created.overlaps).trim());
   if (missing.length) lines.push(`ℹ️ Not found in chat: ${missing.join(', ')}`);
-  if (sent.ok) lines.push('✉️ Confirmation sent to the customer.');
+  if (!sent) lines.push('ℹ️ Auto-reply is off, nothing was sent to the customer.');
+  else if (sent.ok) lines.push('✉️ Confirmation sent to the customer.');
   else lines.push('', `⚠️ Confirmation NOT sent to the customer (${sent.error}). Please send it yourself:`, '', msg);
   await bark(env, `📅 Booking added: ${name}`, lines.join('\n'), link);
 }
 
 // 读取对话：最近 30 天、最多 50 条，按时间先后
+// 外部服务（Facebook 读对话、AI）出问题的错误，可以改用消息内容作为后备
+function serviceError(message) {
+  const e = new Error(message);
+  e.fallback = true;
+  return e;
+}
+
 async function readConversation(psid, env, cfg) {
+  try {
+    return await readConversationRaw(psid, env, cfg);
+  } catch (e) {
+    throw e.fallback ? e : serviceError(`Facebook: ${e.message}`);
+  }
+}
+
+async function readConversationRaw(psid, env, cfg) {
   const graph = `https://graph.facebook.com/${cfg.graph}`;
   const token = `access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN || '')}`;
   const c = await (await fetch(`${graph}/me/conversations?platform=messenger&user_id=${psid}&fields=id&${token}`)).json();
   const id = c.data?.[0]?.id;
-  if (!id) throw new Error(`Facebook: couldn't find this conversation. ${JSON.stringify(c.error || c).slice(0, 200)}`);
+  if (!id) throw serviceError(`Facebook: couldn't find this conversation. ${JSON.stringify(c.error || c).slice(0, 200)}`);
   const m = await (await fetch(`${graph}/${id}/messages?fields=message,from,created_time&limit=50&${token}`)).json();
-  if (m.error || !m.data) throw new Error(`Facebook: couldn't read the messages. ${JSON.stringify(m.error || m).slice(0, 200)}`);
+  if (m.error || !m.data) throw serviceError(`Facebook: couldn't read the messages. ${JSON.stringify(m.error || m).slice(0, 200)}`);
   const since = Date.now() - 30 * 864e5;
   const list = m.data
     .filter(x => x.message && Date.parse(x.created_time) >= since)
     .reverse()
     .map(x => ({ who: x.from?.id === psid ? 'Customer' : 'Us', label: localParts(Date.parse(x.created_time), cfg.tz).label, text: x.message }));
-  if (!list.length) throw new Error('Facebook: no messages found in this conversation in the last 30 days.');
+  if (!list.length) throw serviceError('Facebook: no messages found in this conversation in the last 30 days.');
   return list;
 }
 
-async function aiFromChat(chat, cfg, env) {
+async function aiFromChat(chat, cfg, env, current = null) {
   const t = todayInTz(cfg.tz);
   const transcript = chat.map(x => `[${x.label}] ${x.who}: ${x.text}`).join('\n');
+  const task = current
+    ? `The last message from Us is "Booking updated": the business is changing an existing booking right now.
+Current booking details (before this update):
+${current}
+Find what the customer and the business agreed to change, and save the booking as it should be NOW with the save_booking tool.
+Keep the current value for anything that did not change, copied exactly as shown (use "" where it shows (none)).`
+    : `The last message from Us is "Booking confirmed": the business is confirming a booking right now.
+Find the details of the booking being confirmed now and save them with the save_booking tool.`;
   const prompt =
 `Today is ${WD_LONG[dowOf(t)]} ${t.y}-${pad(t.m)}-${pad(t.d)}, time zone ${cfg.tz}.
 Below is a Facebook Messenger chat between a mobile car air-conditioning business ("Us") and a customer.
-The business has just confirmed a booking. Extract the details of the booking that was agreed most recently.
+${task}
 
 Rules:
+- Earlier bookings in the chat may have been confirmed, changed or cancelled. Only the booking being confirmed now matters.
+  If the customer cancelled and then came back without giving new details, reuse the most recent agreed details.
 - Dates in the chat are Australian (day/month). Words like "tomorrow" or "Sunday" are relative to the time that message was sent, shown in [brackets].
-- Use the final agreed values, e.g. the last price quoted by Us, not an earlier estimate.
+- Use the final agreed values, e.g. the last price quoted by Us, not an earlier estimate, and the time the customer finally accepted, not other options offered.
 - The business's own phone number appears in messages from Us. Never use it as the customer's mobile.
 - Leave a field as "" if it was not mentioned. Do not guess or invent anything.
 - notes: only things the technician should know (e.g. symptoms, parts needed, parking). Keep it short, or "".
 
-Reply with JSON only, nothing else:
-{"date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM or empty","service":"","price":"e.g. $150","address":"","mobile":"","vehicle":"","notes":""}
-
 Chat (oldest first):
 ${transcript}`;
+
+  const str = d => ({ type: 'string', description: d });
+  const tool = {
+    name: 'save_booking',
+    description: 'Save the details of the booking being confirmed now.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date: str('YYYY-MM-DD, or "" if unknown'),
+        start: str('HH:MM in 24-hour time, or "" if unknown'),
+        end: str('HH:MM in 24-hour time, or "" if not mentioned'),
+        service: str('e.g. Car AC check and regas'),
+        price: str('e.g. $150'),
+        address: str('Service address'),
+        mobile: str("Customer's mobile number"),
+        vehicle: str('e.g. 2016 Toyota Camry'),
+        notes: str('Short notes for the technician'),
+      },
+      required: ['date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'notes'],
+    },
+  };
 
   let o;
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: env.AI_MODEL || 'claude-haiku-5-5', max_tokens: 600, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({
+        model: env.AI_MODEL || 'claude-haiku-5-5',
+        max_tokens: 1000,
+        tools: [tool],
+        tool_choice: { type: 'tool', name: 'save_booking' }, // 一定要用这个工具回答，不能写别的文字
+        messages: [{ role: 'user', content: prompt }],
+      }),
     });
-    const j = await r.json();
+    const raw = await r.text();
+    let j;
+    try { j = JSON.parse(raw); } catch { throw new Error(`AI service returned HTTP ${r.status}: ${raw.slice(0, 200) || '(empty)'}`); }
     if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
-    const out = (j.content || []).map(c => c.text || '').join('').replace(/```json|```/g, '').trim();
-    o = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1));
+    o = (j.content || []).find(c => c.type === 'tool_use')?.input;
+    if (!o) throw new Error(`no booking details returned: ${JSON.stringify(j.content || j).slice(0, 200)}`);
   } catch (e) {
-    throw new Error(`AI couldn't read the chat: ${e.message}`);
+    throw serviceError(`AI couldn't read the chat: ${e.message}`);
   }
 
   const res = {};
@@ -361,12 +435,12 @@ ${transcript}`;
 }
 
 // 发给客人的确认消息（标题不能包含三个关键词，避免回传时又触发）
-function customerMessage(d, w, t, env) {
+function customerMessage(d, w, env, header) {
   const { y, m, d: day } = w.date;
   const h = w.start.h, min = w.start.min;
   const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
   const when = `${WD_LONG[dowOf({ y, m, d: day })]} ${day}/${m}, ${clock}`;
-  const lines = [env.CONFIRM_HEADER || '✅ Booking details – Andy Auto AC Regas'];
+  const lines = [header];
   if (d.service) lines.push(`Service: ${d.service}`);
   if (d.price) lines.push(`Price: ${d.price}`);
   lines.push(`Time: ${when}`);
@@ -391,16 +465,37 @@ async function sendToCustomer(psid, text, env) {
   }
 }
 
-async function doUpdate({ env, cfg, psid, text, name, link }) {
-  const f = readFields(text);
+async function doUpdate(ctx) {
+  const { env, cfg, psid, text, name, link } = ctx;
+  // 有 AI 就一律从对话找出改了什么（你在消息里写的栏位优先）；没有 AI 才照消息里写的修改
   const fields = extraFields(text);
-  if (!fields.length) {
+  let fallback = '';
+  if (ctx.manual) {
+    // Booking change：只照消息修改日历
+    if (!fields.length) throw new Error('Nothing to change. Add a line like Time:, Price:, Address: or Mobile:.');
+  } else if (env.ANTHROPIC_API_KEY) {
+    try {
+      return await doUpdateFromChat(ctx);
+    } catch (e) {
+      // 后备：AI 或读对话失败时，消息里有写栏位就照消息内容修改
+      if (!e.fallback) throw e;
+      if (!fields.length) throw new Error(`${e.message}\n\nTo update it without AI, send the changed lines, e.g.\nBooking change\nTime: Sunday 3pm`);
+      fallback = `⚠️ AI unavailable (${e.message}). Updated from your message only. No details were sent to the customer.`;
+    }
+  } else if (!fields.length) {
     throw new Error('Nothing to update. Add a line like Time:, Price:, Address: or Mobile:.');
   }
 
   const list = await findBookings(env, cfg, psid);
   if (!list.length) return notFound(env, name, link, null);
-  const target = list[0];
+  const r = await applyUpdate(ctx, list[0], fields);
+  if (fallback) r.lines.push(fallback);
+  await bark(env, r.title, r.lines.join('\n') + moreBookings(list), link);
+}
+
+// 把 "标签: 内容" 的行套用到预约上，返回 Bark 要显示的内容
+async function applyUpdate({ env, cfg, psid, name }, target, fields, { future = false } = {}) {
+  const f = readFields(fields.join('\n'));
   const old = localParts(target.startMs, cfg.tz);
 
   const now = utcStamp(Date.now());
@@ -413,6 +508,7 @@ async function doUpdate({ env, cfg, psid, text, name, link }) {
   const changed = [];
   let w = { warning: '' };
   let t = null;
+  let overlaps = [];
 
   if (f.time) {
     w = parseWhenParts(f.time, cfg);
@@ -421,10 +517,13 @@ async function doUpdate({ env, cfg, psid, text, name, link }) {
     const start = w.start || { h: old.h, min: old.min };
     const duration = target.endMs - target.startMs;
     t = buildTimes(date, start, w.end, duration > 0 ? duration : cfg.minutes * 60000);
-    changes.DTSTART = [`DTSTART:${utcStamp(zonedToUtc(t.start, cfg.tz))}`];
-    changes.DTEND = [`DTEND:${utcStamp(zonedToUtc(t.end, cfg.tz))}`];
+    if (future) assertFuture(t, cfg);
+    const startMs = zonedToUtc(t.start, cfg.tz), endMs = zonedToUtc(t.end, cfg.tz);
+    changes.DTSTART = [`DTSTART:${utcStamp(startMs)}`];
+    changes.DTEND = [`DTEND:${utcStamp(endMs)}`];
     changes.DURATION = null;
     changed.push('Time');
+    overlaps = await findOverlaps(env, cfg, startMs, endMs, target.uid);
   }
   if (f.address) { changes.LOCATION = [`LOCATION:${icsEsc(f.address)}`]; changed.push('Address'); }
   if (f.service || f.price) {
@@ -463,13 +562,101 @@ async function doUpdate({ env, cfg, psid, text, name, link }) {
     throw e;
   }
 
-  const more = list.length > 1 ? '\nℹ️ This customer has other upcoming bookings.' : '';
-  if (t) {
-    await bark(env, `🔄 Booking rescheduled: ${name}`,
-      `${t.label} (was ${old.label})` + (w.warning ? `\n${w.warning}` : '') + more, link);
-  } else {
-    await bark(env, `🔄 Booking updated: ${name}`, `${old.label} · Changed: ${changed.join(', ')}` + more, link);
+  const lines = t
+    ? [`${t.label} (was ${old.label})` + (others.length ? ` · Changed: ${others.join(', ')}` : '')]
+    : [`${old.label} · Changed: ${changed.join(', ')}`];
+  if (w.warning) lines.push(w.warning);
+  if (overlaps.length) lines.push(overlapLine(overlaps).trim());
+  return { title: `🔄 ${t ? 'Booking rescheduled' : 'Booking updated'}: ${name}`, lines, t, w, old };
+}
+
+// 只发 "Booking updated"：读对话，找出改了什么，更新日历并自动回复客人
+async function doUpdateFromChat(ctx) {
+  const { env, cfg, psid, name, link } = ctx;
+  if (!env.ANTHROPIC_API_KEY) {
+    throw new Error('Nothing to update. Add a line like Time:, Price:, Address: or Mobile:, or set ANTHROPIC_API_KEY to read the changes from the chat.');
   }
+  const list = await findBookings(env, cfg, psid);
+  if (!list.length) return notFound(env, name, link, null);
+  const target = list[0];
+  const old = localParts(target.startMs, cfg.tz);
+
+  // 目前的资料：时间、标题里的服务价格、地点，以及备注里的各栏位
+  const cur = { service: target.service, price: target.price, address: target.location, mobile: '', vehicle: '', notes: '' };
+  for (const l of target.description.split('\n').map(x => x.trim()).filter(x => FIELD_RE.test(x))) {
+    const k = fieldLabel(l).toLowerCase();
+    const v = l.slice(l.search(/[:：]/) + 1).trim();
+    if (k in cur && !cur[k]) cur[k] = v;
+    if (['mobile', 'vehicle', 'notes'].includes(k)) cur[k] = v;
+  }
+  const currentText = [`Time: ${WD_LONG[dowOf(old)]} ${old.y}-${pad(old.m)}-${pad(old.d)} ${pad(old.h)}:${pad(old.min)}`]
+    .concat(CHAT_FIELDS.filter(([k]) => k !== 'time').map(([k, label]) => `${label}: ${cur[k] || '(none)'}`)).join('\n');
+
+  const chat = await readConversation(psid, env, cfg);
+  const ai = await aiFromChat(chat, cfg, env, currentText);
+
+  // 你在消息里写的栏位优先
+  const typed = {};
+  const typedOther = [];
+  for (const l of extraFields(ctx.text)) {
+    const k = fieldLabel(l).toLowerCase();
+    const v = l.slice(l.search(/[:：]/) + 1).trim();
+    if (CHAT_FIELDS.some(([key]) => key === k)) typed[k] = v; else typedOther.push(l);
+  }
+  for (const [k] of CHAT_FIELDS) if (k !== 'time' && typed[k]) ai[k] = typed[k];
+
+  // 跟目前的资料比较，只套用有变的栏位
+  const fields = [];
+  if (typed.time) fields.push(`Time: ${typed.time}`);
+  else if (ai.date && ai.start) {
+    const same = ai.date.y === old.y && ai.date.m === old.m && ai.date.d === old.d && ai.start.h === old.h && ai.start.min === old.min;
+    const end = ai.end ? `-${pad(ai.end.h)}:${pad(ai.end.min)}` : '';
+    if (!same) fields.push(`Time: ${ai.date.y}-${pad(ai.date.m)}-${pad(ai.date.d)} ${pad(ai.start.h)}:${pad(ai.start.min)}${end}`);
+  }
+  const norm = v => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  for (const [k, label] of CHAT_FIELDS) {
+    if (k === 'time' || !ai[k]) continue;
+    if (norm(ai[k]) !== norm(cur[k])) fields.push(`${label}: ${ai[k]}`);
+  }
+  fields.push(...typedOther);
+  if (!fields.length) {
+    throw new Error("Couldn't find any change in the chat. Add the changed lines, e.g. Time: Sunday 3pm, and send again.");
+  }
+
+  const r = await applyUpdate(ctx, target, fields, { future: true });
+
+  // 自动回复客人更新后的完整资料
+  const d = { ...cur };
+  for (const l of fields) {
+    const k = fieldLabel(l).toLowerCase();
+    if (k !== 'time') d[k] = l.slice(l.search(/[:：]/) + 1).trim();
+  }
+  const when = r.t
+    ? { date: r.w.date, start: r.w.start }
+    : { date: { y: old.y, m: old.m, d: old.d }, start: { h: old.h, min: old.min } };
+  const msg = customerMessage(d, when, env, env.UPDATE_HEADER || '🔄 Updated booking details – Andy Auto AC Regas');
+  let sent = null;
+  if (env.AUTO_REPLY !== 'false') sent = await sendToCustomer(psid, msg, env);
+
+  const lines = [...r.lines, ...fields.filter(l => !/^time:/i.test(l)).map(l => `• ${l}`)];
+  if (!sent) lines.push('ℹ️ Auto-reply is off, nothing was sent to the customer.');
+  else if (sent.ok) lines.push('✉️ Updated details sent to the customer.');
+  else lines.push('', `⚠️ Updated details NOT sent to the customer (${sent.error}). Please send it yourself:`, '', msg);
+  await bark(env, r.title, lines.join('\n') + moreBookings(list), link);
+}
+
+function moreBookings(list) {
+  return list.length > 1 ? '\nℹ️ This customer has other upcoming bookings.' : '';
+}
+
+function assertFuture(t, cfg) {
+  if (zonedToUtc(t.start, cfg.tz) <= Date.now()) {
+    throw new Error(`The time came out as ${t.label}, which is in the past. Add a Time: line, e.g. Time: Sunday 3pm, and send again.`);
+  }
+}
+
+function overlapLine(overlaps) {
+  return overlaps.length ? `\n⚠️ Overlaps with: ${overlaps.join('; ')}` : '';
 }
 
 async function doCancel({ env, cfg, psid, text, name, link }) {
@@ -523,7 +710,7 @@ function readFields(text) {
 // 消息里所有 "标签: 内容" 格式的行（开头那行和结尾的客套话、你的电话都不放）
 function extraFields(text) {
   return text.split(/\r?\n/).map(l => l.trim())
-    .filter(l => FIELD_RE.test(l));
+    .filter(l => FIELD_RE.test(l) && !/^booking\b/i.test(l.replace(/^[^A-Za-z]+/, ''))); // 关键词那行不算栏位
 }
 
 const FIELD_RE = /^[A-Za-z\u4e00-\u9fff][\w \u4e00-\u9fff]{0,24}[:：]\s*\S/;
@@ -670,43 +857,6 @@ function buildTimes(date, start, end, defaultMs) {
   };
 }
 
-// 格式看不懂时，用 AI 解析确认消息（可选）
-async function aiParse(text, cfg, env) {
-  const t = todayInTz(cfg.tz);
-  const prompt =
-`Today is ${t.y}-${pad(t.m)}-${pad(t.d)} (${WD_LONG[dowOf(t)]}, time zone ${cfg.tz}).
-Below is a booking confirmation for a mobile car air-conditioning service. Dates are Australian (day/month).
-The phone number and name at the end belong to the business, not the customer.
-Reply with JSON only, nothing else:
-{"date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM or null","service":"","price":"","address":""}
-If the date or start time cannot be determined, reply {"error":"reason"}.
-
-Message:
-${text}`;
-  try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: env.AI_MODEL || 'claude-haiku-5-5', max_tokens: 400, messages: [{ role: 'user', content: prompt }] }),
-    });
-    const j = await r.json();
-    const out = (j.content || []).map(c => c.text || '').join('').replace(/```json|```/g, '').trim();
-    const o = JSON.parse(out);
-    if (o.error || !o.date || !o.start) return null;
-    const [y, m, d] = o.date.split('-').map(Number);
-    const [h, min] = o.start.split(':').map(Number);
-    let end = null;
-    if (o.end) { const [eh, em] = o.end.split(':').map(Number); end = { h: eh, min: em }; }
-    return {
-      when: { date: { y, m, d }, start: { h, min }, end },
-      service: o.service || '', price: o.price || '', address: o.address || '',
-    };
-  } catch (e) {
-    console.error('aiParse', e);
-    return null;
-  }
-}
-
 // ================= iCloud 日历（CalDAV） =================
 
 const ICLOUD_ROOT = 'https://caldav.icloud.com/';
@@ -802,6 +952,29 @@ async function findBookings(env, cfg, psid) {
   return list.sort((a, b) => a.startMs - b.startMs);
 }
 
+// 同一时段日历里的其他事件（不论是谁的，包括手动建立的）
+async function findOverlaps(env, cfg, startMs, endMs, excludeUid) {
+  const cal = await calendarUrl(env);
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(startMs)}" end="${utcStamp(endMs)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+  const out = [];
+  for (const resp of xmlAll(r.text, 'response')) {
+    const ics = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!ics.includes('BEGIN:VEVENT')) continue;
+    const e = parseEvent(ics, cfg.tz);
+    if (!e.startMs || e.uid === excludeUid) continue;
+    if (!(e.startMs < endMs && e.endMs > startMs)) continue;
+    const a = localParts(e.startMs, cfg.tz), b = localParts(e.endMs, cfg.tz);
+    out.push(`${e.summary || '(no title)'} ${pad(a.h)}:${pad(a.min)}–${pad(b.h)}:${pad(b.min)}`);
+  }
+  return out;
+}
+
 function sameLocalStart(event, t, tz) {
   const p = localParts(event.startMs, tz);
   return `${p.y}-${pad(p.m)}-${pad(p.d)}T${pad(p.h)}:${pad(p.min)}` === t.start.slice(0, 16);
@@ -889,7 +1062,7 @@ function parseEvent(ics, tz) {
     ics, startMs, endMs,
     uid: val('UID'),
     sequence: parseInt(val('SEQUENCE') || '0', 10) || 0,
-    description: val('DESCRIPTION'),
+    description: val('DESCRIPTION'), summary: val('SUMMARY'), location: val('LOCATION'),
     psid: val('X-FB-PSID'), name: val('X-FB-NAME'), service: val('X-FB-SERVICE'), price: val('X-FB-PRICE'),
   };
 }

@@ -63,7 +63,12 @@ globalThis.fetch = async (input, opt = {}) => {
   }
   if (url.includes('graph.facebook.com')) return Response.json({ first_name: 'Test', last_name: 'Customer' });
   if (url.startsWith('https://api.anthropic.com/')) {
-    aiPrompts.push(JSON.parse(opt.body).messages[0].content);
+    const req = JSON.parse(opt.body);
+    aiPrompts.push(req.messages[0].content);
+    if (req.tool_choice) { // 一键确认：要求用工具回答
+      assert.equal(req.tool_choice.name, 'save_booking');
+      return Response.json({ content: [{ type: 'tool_use', id: 't1', name: 'save_booking', input: aiReply }] });
+    }
     return Response.json({ content: [{ type: 'text', text: JSON.stringify(aiReply) }] });
   }
 
@@ -300,6 +305,149 @@ const nextSunday = (() => {
   assert.match(barks[0].title, /Booking not saved/);
   assert.match(barks[0].body, /Add a Time: line/);
   ok('对话里找不到时间：不建立预约，提醒补上 Time:');
+}
+
+{
+  store.clear(); barks = [];
+  aiReply = null; // AI 服务回了空内容
+  await send('Booking confirmed', 'mid-ai-6');
+  assert.equal(store.size, 0);
+  assert.match(barks[0].body, /AI couldn't read the chat/);
+  ok('AI 回传异常：清楚提示原因，不会建立错误的预约');
+}
+
+// ---------- 时间已过、撞时间、一键修改、关键词位置 ----------
+const dayStr = n => {
+  const [y, m, d] = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Brisbane' }).format(new Date()).split('-').map(Number);
+  const x = new Date(Date.UTC(y, m - 1, d + n));
+  return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, '0')}-${String(x.getUTCDate()).padStart(2, '0')}`;
+};
+const baseAi = { date: nextSunday, start: '14:00', end: '', service: 'Car AC check and regas', price: '$220', address: '12 Test Street, Eagleby', mobile: '0400 123 456', vehicle: '2016 Toyota Camry', notes: '' };
+
+{
+  store.clear(); barks = [];
+  aiReply = { ...baseAi, date: dayStr(-1) };
+  await send('Booking confirmed', 'mid-past');
+  assert.equal(store.size, 0);
+  assert.match(barks[0].body, /in the past/);
+  ok('AI 算出的时间已经过去：不建立，提醒补 Time:');
+}
+
+{
+  store.clear(); barks = [];
+  // 另一位客人同一时段已有预约
+  aiReply = { ...baseAi, start: '13:30' };
+  await send('Booking confirmed', 'mid-other', '222');
+  aiReply = { ...baseAi };
+  barks = [];
+  await send("Booking confirmed 👍 I'll send through your booking details shortly.", 'mid-ov');
+  assert.equal(store.size, 2);
+  assert.match(barks[0].body, /Overlaps with: Test Customer – Car AC check and regas \$220 13:30–15:00/);
+  ok('跟别的预约撞时间：照样建立，Bark 提醒 Overlaps with');
+}
+
+{
+  barks = []; sentToCustomer = []; aiPrompts = [];
+  aiReply = { ...baseAi, start: '16:00', price: '$250' };
+  await send("Booking updated 👍 I'll send through your updated booking details shortly.", 'mid-up1');
+  assert.match(aiPrompts[0], /Current booking details/);
+  const e = events().find(x => prop(x, 'UID').includes('-111@'));
+  assert.equal(prop(e, 'SUMMARY'), 'Test Customer – Car AC check and regas $250');
+  assert.match(prop(e, 'DESCRIPTION'), /Time: \w{3} \d+\/\d+ 16:00/);
+  assert.match(prop(e, 'DESCRIPTION'), /Price: \$250/);
+  assert.match(sentToCustomer[0].message.text, /^🔄 Updated booking details[\s\S]*Price: \$250[\s\S]*4:00pm/);
+  assert.match(barks[0].title, /Booking rescheduled/);
+  assert.match(barks[0].body, /Updated details sent/);
+  ok('一键修改：AI 找出改了时间和价格，更新日历并自动回复客人');
+}
+
+{
+  barks = [];
+  await send('Booking updated', 'mid-up2'); // AI 回传的跟现在一样
+  assert.match(barks[0].title, /Booking not updated/);
+  assert.match(barks[0].body, /Couldn't find any change/);
+  ok('一键修改但对话里没有改动：提醒，不乱改');
+}
+
+{
+  barks = [];
+  const before = store.size;
+  await send('Sure, your booking confirmed time is 2pm Sunday', 'mid-chat');
+  await send('Just letting you know the booking updated fine', 'mid-chat2');
+  assert.equal(store.size, before);
+  assert.equal(barks.length, 0);
+  ok('关键词不在开头的普通聊天不会触发');
+}
+
+{
+  store.clear(); barks = []; sentToCustomer = [];
+  aiReply = { ...baseAi };
+  await send(`✅ Booking confirmed – Andy Auto AC Regas\nService: Regas only\nPrice: $130\nTime: Saturday 11am\nAddress: 5 Other St`, 'mid-full-ai');
+  const e = events()[0];
+  assert.equal(prop(e, 'SUMMARY'), 'Test Customer – Regas only $130');
+  assert.equal(prop(e, 'LOCATION'), '5 Other St');
+  assert.equal(sentToCustomer.length, 1);
+  ok('有 AI 时完整模板也走同一条路：写的栏位优先，并自动回复客人');
+
+  barks = []; sentToCustomer = [];
+  aiReply = { ...baseAi, date: '', start: '', service: 'Regas only', price: '$130', address: '5 Other St' }; // AI 认为没变
+  await send('Booking updated\nPrice: $140', 'mid-typed-up');
+  assert.equal(prop(events()[0], 'SUMMARY'), 'Test Customer – Regas only $140');
+  assert.match(sentToCustomer[0].message.text, /Price: \$140/);
+  ok('一键修改时自己写的 Price: 优先');
+}
+
+{
+  store.clear(); barks = []; sentToCustomer = [];
+  aiReply = null; // AI 出问题
+  await send(`✅ Booking confirmed – Andy Auto AC Regas\nService: Car AC\nPrice: $123\nTime: 10am tomorrow morning\nAddress: 1 molly court`, 'mid-fb1');
+  assert.equal(store.size, 1);
+  assert.equal(prop(events()[0], 'SUMMARY'), 'Test Customer – Car AC $123');
+  assert.equal(sentToCustomer.length, 0);
+  assert.match(barks[0].body, /AI unavailable[\s\S]*No confirmation was sent/);
+  ok('后备：AI 出问题时，消息里有 Time: 就照消息内容建立');
+
+  barks = [];
+  await send('Booking updated\nPrice: $150', 'mid-fb2');
+  assert.equal(prop(events()[0], 'SUMMARY'), 'Test Customer – Car AC $150');
+  assert.match(barks[0].body, /AI unavailable/);
+  ok('后备：AI 出问题时，修改照消息里写的栏位');
+
+  barks = [];
+  await send("Booking confirmed 👍 I'll send through your booking details shortly.", 'mid-fb3');
+  assert.match(barks[0].title, /Booking not saved/);
+  assert.match(barks[0].body, /Booked you in/);
+  ok('后备：AI 出问题又没写资料时，告诉你怎么补发');
+}
+
+{
+  // 手动关键词：AI 正常也不使用、不回复客人
+  aiReply = { ...baseAi };
+  store.clear(); barks = []; sentToCustomer = []; aiPrompts = [];
+  await send(`Booked you in – Andy Auto AC Regas\nService: Car AC\nPrice: $123\nTime: 10am tomorrow\nAddress: 1 Molly Court\n\nAny changes, reply here or call Andy on 0478 701 289. See you then!`, 'mid-man1');
+  assert.equal(store.size, 1);
+  assert.equal(prop(events()[0], 'SUMMARY'), 'Test Customer – Car AC $123');
+  assert.doesNotMatch(prop(events()[0], 'DESCRIPTION'), /0478/);
+  assert.equal(aiPrompts.length, 0);
+  assert.equal(sentToCustomer.length, 0);
+  assert.match(barks[0].title, /Booking added/);
+  ok('Booked you in：只照消息写入日历，不用 AI、不回复客人');
+
+  barks = [];
+  await send(`🔄 Booking Change – Andy Auto AC Regas\nTime: 2pm\nAddress: 9 New Rd\n\nAny changes, reply here or call Andy on 0478 701 289. See you then!`, 'mid-man2');
+  const e = events()[0];
+  assert.equal(prop(e, 'LOCATION'), '9 New Rd');
+  assert.match(prop(e, 'DESCRIPTION'), /Time: \w{3} \d+\/\d+ 14:00/);
+  assert.equal(aiPrompts.length, 0);
+  assert.equal(sentToCustomer.length, 0);
+  assert.match(barks[0].title, /Booking rescheduled/);
+  ok('Booking change：只照消息修改日历，不用 AI、不回复客人');
+
+  barks = [];
+  await send(`Booked you in – Andy Auto AC Regas\nService: Car AC\nPrice: $\nTime:\nAddress:`, 'mid-man3');
+  assert.match(barks[0].title, /Booking not saved/);
+  assert.match(barks[0].body, /No "Time:" line/);
+  ok('Booked you in 没填时间：提醒，不建立');
 }
 
 {
