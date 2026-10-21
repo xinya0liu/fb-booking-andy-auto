@@ -136,7 +136,9 @@ async function onPageMessage(ev, env, origin) {
     getCustomerName(psid, env),
     conversationLink(cfg, env, psid),
   ]);
-  const ctx = { env, cfg, psid, mid, text, name: name || 'Customer', link: viaWorker(origin, env, rawLink) };
+  // 消息里写了 "Name: …" 就用它，否则用 Facebook 上的名字
+  const typed = readFields(text).name;
+  const ctx = { env, cfg, psid, mid, text, name: typed || name || 'Customer', link: viaWorker(origin, env, rawLink) };
 
   try {
     if (action === 'confirm') await doConfirm(ctx);
@@ -327,7 +329,7 @@ function readFields(text) {
     const m = text.match(new RegExp(`^[ \\t]*${label}[ \\t]*[:：][ \\t]*(.+)$`, 'im'));
     return m ? m[1].trim() : '';
   };
-  return { service: field('Service'), price: field('Price'), time: field('Time'), address: field('Address') };
+  return { service: field('Service'), price: field('Price'), time: field('Time'), address: field('Address'), name: field('Name') };
 }
 
 // 消息里所有 "标签: 内容" 格式的行（开头那行和结尾的客套话、你的电话都不放）
@@ -815,16 +817,29 @@ function utcStamp(ms) { return new Date(ms).toISOString().replace(/[-:]/g, '').s
 
 // ================= Meta / 链接 / Bark =================
 
+// 客人名字：先查客人资料；查不到（一般客人常见，因为需要额外权限）就从对话的参与者里找
 async function getCustomerName(psid, env) {
   if (!env.PAGE_ACCESS_TOKEN) return null;
+  const graph = `https://graph.facebook.com/${config(env).graph}`;
+  const token = `access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN)}`;
   try {
-    const r = await fetch(`https://graph.facebook.com/${config(env).graph}/${psid}?fields=first_name,last_name` +
-      `&access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN)}`);
-    const j = await r.json();
-    return [j.first_name, j.last_name].filter(Boolean).join(' ') || null;
-  } catch {
-    return null;
+    const j = await (await fetch(`${graph}/${psid}?fields=first_name,last_name&${token}`)).json();
+    const n = [j.first_name, j.last_name].filter(Boolean).join(' ');
+    if (n) return n;
+    console.error('name via profile failed', JSON.stringify(j.error || j));
+  } catch (e) {
+    console.error('name via profile failed', e);
   }
+  try {
+    const j = await (await fetch(`${graph}/me/conversations?platform=messenger&user_id=${psid}&fields=participants&${token}`)).json();
+    const people = j.data?.[0]?.participants?.data || [];
+    const p = people.find(x => x.id === psid);
+    if (p?.name) return p.name;
+    console.error('name via conversation failed', JSON.stringify(j.error || j));
+  } catch (e) {
+    console.error('name via conversation failed', e);
+  }
+  return null;
 }
 
 // 把对话链接包一层 Worker 中转（设 LINK_DIRECT=true 可关闭）
