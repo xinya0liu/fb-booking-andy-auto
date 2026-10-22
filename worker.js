@@ -737,25 +737,31 @@ async function onCustomerMessage(ev, env, origin) {
   const name = await getCustomerName(psid, env);
 
   const kvKey = `bark-${psid}`;
+  const now = Date.now();
   const bookings = await findAllBookings(env, cfg, psid).catch(() => []);
-  const title = bookings.length
-    ? `💬 ${name || 'Customer'} / Old customer`
-    : `💬 ${name || 'Customer'}`;
+  const past = bookings.filter(e => e.startMs < now).sort((a, b) => b.startMs - a.startMs);
+  const upcoming = bookings.filter(e => e.startMs >= now).sort((a, b) => a.startMs - b.startMs);
+
+  const tags = [...(upcoming.length ? ['Upcoming appointment'] : []), ...(past.length ? ['Old customer'] : [])];
+  const title = tags.length ? `💬 ${name || 'Customer'} / ${tags.join(' · ')}` : `💬 ${name || 'Customer'}`;
+
   let body = ev.message.text || '';
 
   // 历史预约只在 4 小时内第一条消息时显示
-  const showHistory = bookings.length && env.BARK_COOLDOWN
+  const hasHistory = upcoming.length || past.length;
+  const showHistory = hasHistory && env.BARK_COOLDOWN
     ? !(await env.BARK_COOLDOWN.get(kvKey))
-    : bookings.length > 0;
+    : hasHistory > 0;
 
   if (showHistory) {
-    const history = bookings
-      .map(e => {
-        const p = localParts(e.startMs, cfg.tz);
-        return `• ${[e.service, e.price].filter(Boolean).join(' ')} · ${p.label}`;
-      })
-      .join('\n');
-    body = `${history}\n─────────────────\n${body}`;
+    const fmt = e => {
+      const p = localParts(e.startMs, cfg.tz);
+      return `• ${[e.service, e.price].filter(Boolean).join(' ')} · ${p.label}`;
+    };
+    const sections = [];
+    if (upcoming.length) sections.push(`Upcoming:\n${upcoming.map(fmt).join('\n')}`);
+    if (past.length) sections.push(`Past:\n${past.map(fmt).join('\n')}`);
+    body = `${sections.join('\n\n')}\n─────────────────\n${body}`;
     if (env.BARK_COOLDOWN) {
       await env.BARK_COOLDOWN.put(kvKey, '1', { expirationTtl: 4 * 3600 });
     }
