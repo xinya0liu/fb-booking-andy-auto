@@ -742,7 +742,9 @@ async function handleScheduled(env) {
   const lines = bookings.map(e => {
     const p = localParts(e.startMs, cfg.tz);
     const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
-    return [clock, e.service, e.location, e.name || 'Customer'].filter(Boolean).join(' · ');
+    const vehicle = (e.description || '').match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
+    const suburb = e.location ? e.location.replace(/\s+(QLD|NSW|VIC|WA|SA|TAS|ACT|NT)\b.*/i, '').split(/\s+/).pop() : '';
+    return [clock, e.service, vehicle, suburb, e.name || 'Customer'].filter(Boolean).join(' · ');
   });
   await bark(env, `📅 Tomorrow: ${bookings.length} appointment${bookings.length > 1 ? 's' : ''}`, lines.join('\n'), '');
 
