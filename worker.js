@@ -82,6 +82,19 @@ export default {
       return customerCard(url.searchParams.get('n') || '', env);
     }
 
+    // 临时测试路由：触发 Andy 的 Bark reminder
+    if (req.method === 'GET' && url.pathname === '/test-bark' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      await handleScheduled('test', env);
+      return new Response('done');
+    }
+
+    // 打印页：明天的预约工单
+    if (req.method === 'GET' && url.pathname === '/print' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return printPage(env, url.origin);
+    }
+
     // Meta webhook 验证
     if (req.method === 'GET') {
       if (url.searchParams.get('hub.mode') === 'subscribe' &&
@@ -735,29 +748,44 @@ async function notFound(env, name, link, hint) {
 // ================= 客人发来的消息 =================
 
 async function handleScheduled(cron, env) {
+  console.log('[scheduled] fired, cron=', cron);
   const cfg = config(env);
-  const bookings = await findTomorrowBookings(env, cfg);
-  if (!bookings.length) return;
-
-  // 0 9 * * * = 7pm Brisbane → Bark to Andy
-  if (cron === '0 9 * * *') {
-    const lines = bookings.map(e => {
-      const p = localParts(e.startMs, cfg.tz);
-      const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
-      const vehicle = (e.description || '').match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
-      const suburb = e.location ? e.location.replace(/\s+(QLD|NSW|VIC|WA|SA|TAS|ACT|NT)\b.*/i, '').split(/\s+/).pop() : '';
-      return [clock, e.service, vehicle, suburb, e.name || 'Customer'].filter(Boolean).join(' · ');
-    });
-    await bark(env, `📅 Tomorrow: ${bookings.length} APPOINTMENT${bookings.length > 1 ? 'S' : ''} FROM FB`, lines.join('\n'), '');
-  }
-
-  // 0 0 * * * = 10am Brisbane → Messenger reminder to customers
+  // 0 0 * * * = 10am Brisbane → Messenger reminder to customers (skip same-day bookings)
   if (cron === '0 0 * * *') {
-    for (const e of bookings) {
+    const toRemind = await findTomorrowBookings(env, cfg, { skipToday: true });
+    console.log('[scheduled] customer reminders:', toRemind.length);
+    for (const e of toRemind) {
       if (!e.psid) continue;
       await sendToCustomer(e.psid, buildReminderMessage(e, cfg, env), env);
     }
+    return;
   }
+
+  const bookings = await findTomorrowBookings(env, cfg);
+  console.log('[scheduled] bookings found:', bookings.length);
+  if (!bookings.length) {
+    await bark(env, '📅 Tomorrow: No bookings', '', '');
+    return;
+  }
+
+  // all other crons (0 9 * * * = 7pm Brisbane, or any test cron) → Bark to Andy
+  const blocks = bookings.map(e => {
+    const p = localParts(e.startMs, cfg.tz);
+    const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
+    const desc = e.description || '';
+    const vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
+    const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
+    const parts = [clock];
+    if (e.service) parts.push(e.service);
+    if (e.price) parts.push(e.price);
+    const row1 = parts.join(' · ');
+    const row2 = [vehicle, e.location].filter(Boolean).join(' · ');
+    const row3 = [e.name || 'Customer', mobile].filter(Boolean).join(' · ');
+    return [row1, row2, row3].filter(Boolean).join('\n');
+  });
+  const workerUrl = env.WORKER_URL || 'https://fb-booking-andy-auto.susanna0liu.workers.dev';
+  const printUrl = `${workerUrl}/print?secret=${encodeURIComponent(env.VERIFY_TOKEN || '')}`;
+  await bark(env, `📅 Tomorrow: ${bookings.length} APPOINTMENT${bookings.length > 1 ? 'S' : ''}`, blocks.join('\n───\n'), printUrl);
 }
 
 function buildReminderMessage(e, cfg, env) {
@@ -775,7 +803,72 @@ function buildReminderMessage(e, cfg, env) {
   return lines.join('\n');
 }
 
-async function findTomorrowBookings(env, cfg) {
+async function printPage(env, origin) {
+  const cfg = config(env);
+  const bookings = await findTomorrowBookings(env, cfg);
+  const today = todayInTz(cfg.tz);
+  const tom = new Date(today.y, today.m - 1, today.d + 1);
+  const dateStr = `${WD_LONG[tom.getDay()]} ${tom.getDate()}/${tom.getMonth() + 1}/${tom.getFullYear()}`;
+
+  const rows = bookings.map((e, i) => {
+    const p = localParts(e.startMs, cfg.tz);
+    const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
+    const desc = e.description || '';
+    const vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
+    const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
+    const bg = i % 2 === 0 ? '#fff' : '#f9f9f9';
+    return `<tr style="background:${bg}">
+      <td class="n">${i + 1}</td>
+      <td class="time">${clock}</td>
+      <td>${e.service || ''}</td>
+      <td>${e.price || ''}</td>
+      <td>${vehicle}</td>
+      <td>${e.location || ''}</td>
+      <td>${e.name || ''}</td>
+      <td>${mobile}</td>
+    </tr>`;
+  }).join('');
+
+  const empty = bookings.length === 0
+    ? '<p class="empty">No bookings for tomorrow.</p>' : '';
+
+  const tableHtml = bookings.length === 0 ? '' : `
+  <table>
+    <thead><tr>
+      <th>#</th><th>Time</th><th>Service</th><th>Price</th>
+      <th>Vehicle</th><th>Address</th><th>Customer</th><th>Mobile</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Andy Auto – ${dateStr}</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 24px 32px; color: #111; }
+  h1 { font-size: 1.15em; margin-bottom: 2px; }
+  h2 { font-size: 0.95em; color: #555; margin-top: 0; font-weight: normal; margin-bottom: 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.88em; }
+  th { background: #222; color: #fff; padding: 7px 10px; text-align: left; font-weight: normal; white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
+  td.n { color: #aaa; width: 24px; font-size: 0.85em; }
+  td.time { white-space: nowrap; font-weight: bold; }
+  .empty { color: #888; font-style: italic; }
+  @media print {
+    @page { size: A4 landscape; margin: 15mm; }
+    body { margin: 0; }
+    th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head><body>
+<h1>Andy Auto AC Regas</h1>
+<h2>Appointments for ${dateStr} &nbsp;·&nbsp; ${bookings.length} booking${bookings.length !== 1 ? 's' : ''}</h2>
+${empty}${tableHtml}
+</body></html>`;
+
+  return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8' } });
+}
+
+async function findTomorrowBookings(env, cfg, { skipToday = false } = {}) {
   const cal = await calendarUrl(env);
   const today = todayInTz(cfg.tz);
   const tom = new Date(today.y, today.m - 1, today.d + 1);
@@ -795,8 +888,7 @@ async function findTomorrowBookings(env, cfg) {
     if (!ics.includes('BEGIN:VEVENT')) continue;
     const e = parseEvent(ics, cfg.tz);
     if (!e.startMs) continue;
-    // 今天创建的预约跳过（刚预约的不需要提醒）
-    if (e.createdMs) {
+    if (skipToday && e.createdMs) {
       const created = localParts(e.createdMs, cfg.tz);
       if (created.y === today.y && created.m === today.m && created.d === today.d) continue;
     }
@@ -1434,7 +1526,8 @@ async function bark(env, title, body, link) {
   const urls = (env.BARK_URL || '').split(/[,\s]+/).map(u => u.trim().replace(/\/+$/, '')).filter(Boolean);
   if (!urls.length) return;
   const path = `/${encodeURIComponent(title)}/${encodeURIComponent(String(body || ' ').slice(0, 1500))}`;
-  const query = `?group=${encodeURIComponent(env.BARK_GROUP || 'Bookings')}`;
+  let query = `?group=${encodeURIComponent(env.BARK_GROUP || 'Bookings')}`;
+  if (link) query += `&url=${encodeURIComponent(link)}`;
   await Promise.all(urls.map(u => fetch(u + path + query).catch(e => console.error('bark', e))));
 }
 
