@@ -785,6 +785,11 @@ async function findTomorrowBookings(env, cfg) {
     if (!ics.includes('BEGIN:VEVENT')) continue;
     const e = parseEvent(ics, cfg.tz);
     if (!e.startMs) continue;
+    // 今天创建的预约跳过（刚预约的不需要提醒）
+    if (e.createdMs) {
+      const created = localParts(e.createdMs, cfg.tz);
+      if (created.y === today.y && created.m === today.m && created.d === today.d) continue;
+    }
     list.push(e);
   }
   return list.sort((a, b) => a.startMs - b.startMs);
@@ -1214,8 +1219,9 @@ function parseEvent(ics, tz) {
   const val = n => (p[n] ? icsUnesc(p[n].value) : '');
   const startMs = icsTime(p.DTSTART, tz);
   const endMs = icsTime(p.DTEND, tz) || (startMs ? startMs + 3600000 : null);
+  const createdMs = icsTime(p.CREATED, tz);
   return {
-    ics, startMs, endMs,
+    ics, startMs, endMs, createdMs,
     uid: val('UID'),
     sequence: parseInt(val('SEQUENCE') || '0', 10) || 0,
     description: val('DESCRIPTION'), summary: val('SUMMARY'), location: val('LOCATION'),
