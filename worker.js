@@ -1359,7 +1359,7 @@ async function bark(env, title, body, link) {
   const urls = (env.BARK_URL || '').split(/[,\s]+/).map(u => u.trim().replace(/\/+$/, '')).filter(Boolean);
   if (!urls.length) return;
   const path = `/${encodeURIComponent(title)}/${encodeURIComponent(String(body || ' ').slice(0, 1500))}`;
-  const query = `?group=${encodeURIComponent(env.BARK_GROUP || 'Bookings')}` + (link ? `&url=${encodeURIComponent(link)}` : '');
+  const query = `?group=${encodeURIComponent(env.BARK_GROUP || 'Bookings')}`;
   await Promise.all(urls.map(u => fetch(u + path + query).catch(e => console.error('bark', e))));
 }
 
