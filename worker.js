@@ -816,9 +816,12 @@ async function printPage(env, origin) {
     const desc = e.description || '';
     const vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
     const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
-    const bg = i % 2 === 0 ? '#fff' : '#f9f9f9';
+    const isSms = !e.psid;
+    const bg = isSms ? '#e0e0e0' : (i % 2 === 0 ? '#fff' : '#f5f5f5');
+    const source = isSms ? 'SMS' : 'FB';
     return `<tr style="background:${bg}">
       <td class="n">${i + 1}</td>
+      <td class="src">${source}</td>
       <td class="time">${clock}</td>
       <td>${e.service || ''}</td>
       <td>${e.price || ''}</td>
@@ -835,7 +838,7 @@ async function printPage(env, origin) {
   const tableHtml = bookings.length === 0 ? '' : `
   <table>
     <thead><tr>
-      <th>#</th><th>Time</th><th>Service</th><th>Price</th>
+      <th>#</th><th>Source</th><th>Time</th><th>Service</th><th>Price</th>
       <th>Vehicle</th><th>Address</th><th>Customer</th><th>Mobile</th>
     </tr></thead>
     <tbody>${rows}</tbody>
@@ -853,6 +856,8 @@ async function printPage(env, origin) {
   td.n { color: #aaa; width: 24px; font-size: 0.85em; }
   td.time { white-space: nowrap; font-weight: bold; }
   .empty { color: #888; font-style: italic; }
+  .src { color: #888; font-size: 0.8em; text-align: center; white-space: nowrap; width: 40px; }
+  @media print { tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
   @media print {
     @page { size: A4 landscape; margin: 15mm; }
     body { margin: 0; }
