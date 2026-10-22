@@ -738,9 +738,10 @@ async function onCustomerMessage(ev, env, origin) {
 
   const kvKey = `bark-${psid}`;
   const now = Date.now();
-  const bookings = await findAllBookings(env, cfg, psid).catch(() => []);
+  const bookings = await findAllBookings(env, cfg, psid).catch(e => { console.error('findAllBookings error:', e.message); return []; });
   const past = bookings.filter(e => e.startMs < now).sort((a, b) => b.startMs - a.startMs);
   const upcoming = bookings.filter(e => e.startMs >= now).sort((a, b) => a.startMs - b.startMs);
+  console.log(`onCustomerMessage psid=${psid} bookings=${bookings.length} past=${past.length} upcoming=${upcoming.length}`);
 
   const tags = [...(upcoming.length ? ['Upcoming appointment'] : []), ...(past.length ? ['Old customer'] : [])];
   const title = tags.length ? `💬 ${name || 'Customer'} / ${tags.join(' · ')}` : `💬 ${name || 'Customer'}`;
