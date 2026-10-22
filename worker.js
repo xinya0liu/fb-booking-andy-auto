@@ -105,7 +105,7 @@ export default {
     return new Response('EVENT_RECEIVED');
   },
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(handleScheduled(env).catch(e => console.error('scheduled error', e)));
+    ctx.waitUntil(handleScheduled(event.cron, env).catch(e => console.error('scheduled error', e)));
   },
 };
 
@@ -734,23 +734,29 @@ async function notFound(env, name, link, hint) {
 
 // ================= 客人发来的消息 =================
 
-async function handleScheduled(env) {
+async function handleScheduled(cron, env) {
   const cfg = config(env);
   const bookings = await findTomorrowBookings(env, cfg);
   if (!bookings.length) return;
 
-  const lines = bookings.map(e => {
-    const p = localParts(e.startMs, cfg.tz);
-    const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
-    const vehicle = (e.description || '').match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
-    const suburb = e.location ? e.location.replace(/\s+(QLD|NSW|VIC|WA|SA|TAS|ACT|NT)\b.*/i, '').split(/\s+/).pop() : '';
-    return [clock, e.service, vehicle, suburb, e.name || 'Customer'].filter(Boolean).join(' · ');
-  });
-  await bark(env, `📅 Tomorrow: ${bookings.length} APPOINTMENT${bookings.length > 1 ? 'S' : ''} FROM FB`, lines.join('\n'), '');
+  // 0 9 * * * = 7pm Brisbane → Bark to Andy
+  if (cron === '0 9 * * *') {
+    const lines = bookings.map(e => {
+      const p = localParts(e.startMs, cfg.tz);
+      const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
+      const vehicle = (e.description || '').match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
+      const suburb = e.location ? e.location.replace(/\s+(QLD|NSW|VIC|WA|SA|TAS|ACT|NT)\b.*/i, '').split(/\s+/).pop() : '';
+      return [clock, e.service, vehicle, suburb, e.name || 'Customer'].filter(Boolean).join(' · ');
+    });
+    await bark(env, `📅 Tomorrow: ${bookings.length} APPOINTMENT${bookings.length > 1 ? 'S' : ''} FROM FB`, lines.join('\n'), '');
+  }
 
-  for (const e of bookings) {
-    if (!e.psid) continue;
-    await sendToCustomer(e.psid, buildReminderMessage(e, cfg, env), env);
+  // 0 0 * * * = 10am Brisbane → Messenger reminder to customers
+  if (cron === '0 0 * * *') {
+    for (const e of bookings) {
+      if (!e.psid) continue;
+      await sendToCustomer(e.psid, buildReminderMessage(e, cfg, env), env);
+    }
   }
 }
 
