@@ -741,7 +741,7 @@ async function onCustomerMessage(ev, env, origin) {
   const bookings = await findAllBookings(env, cfg, psid).catch(e => { console.error('findAllBookings error:', e.message); return []; });
   const past = bookings.filter(e => e.startMs < now).sort((a, b) => b.startMs - a.startMs);
   const upcoming = bookings.filter(e => e.startMs >= now).sort((a, b) => a.startMs - b.startMs);
-  console.log(`onCustomerMessage psid=${psid} bookings=${bookings.length} past=${past.length} upcoming=${upcoming.length}`);
+  console.log(`onCustomerMessage psid=${psid} bookings=${bookings.length} past=${past.length} upcoming=${upcoming.length} hasCooldownKV=${!!env.BARK_COOLDOWN}`);
 
   const tags = [...(upcoming.length ? ['Upcoming appointment'] : []), ...(past.length ? ['Old customer'] : [])];
   const title = tags.length ? `💬 ${name || 'Customer'} / ${tags.join(' · ')}` : `💬 ${name || 'Customer'}`;
@@ -754,6 +754,7 @@ async function onCustomerMessage(ev, env, origin) {
     ? !(await env.BARK_COOLDOWN.get(kvKey))
     : hasHistory > 0;
 
+  console.log(`showHistory=${showHistory}`);
   if (showHistory) {
     const fmt = e => {
       const p = localParts(e.startMs, cfg.tz);
@@ -763,6 +764,7 @@ async function onCustomerMessage(ev, env, origin) {
     if (upcoming.length) sections.push(`Upcoming:\n${upcoming.map(fmt).join('\n')}`);
     if (past.length) sections.push(`Past:\n${past.map(fmt).join('\n')}`);
     body = `${sections.join('\n\n')}\n─────────────────\n${body}`;
+    console.log(`history body=${body.slice(0, 100)}`);
     if (env.BARK_COOLDOWN) {
       await env.BARK_COOLDOWN.put(kvKey, '1', { expirationTtl: 4 * 3600 });
     }
