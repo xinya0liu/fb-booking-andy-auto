@@ -104,6 +104,9 @@ export default {
     ctx.waitUntil(handle(body, env, url.origin).catch(e => console.error('handle error', e)));
     return new Response('EVENT_RECEIVED');
   },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(handleScheduled(env).catch(e => console.error('scheduled error', e)));
+  },
 };
 
 async function handle(body, env, origin) {
@@ -730,6 +733,62 @@ async function notFound(env, name, link, hint) {
 }
 
 // ================= 客人发来的消息 =================
+
+async function handleScheduled(env) {
+  const cfg = config(env);
+  const bookings = await findTomorrowBookings(env, cfg);
+  if (!bookings.length) return;
+
+  const lines = bookings.map(e => {
+    const p = localParts(e.startMs, cfg.tz);
+    const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
+    return `• ${e.name || 'Customer'} – ${[e.service, e.price].filter(Boolean).join(' ')} · ${clock}`;
+  });
+  await bark(env, `📅 Tomorrow (${bookings.length} appointment${bookings.length > 1 ? 's' : ''})`, lines.join('\n'), '');
+
+  for (const e of bookings) {
+    if (!e.psid) continue;
+    await sendToCustomer(e.psid, buildReminderMessage(e, cfg, env), env);
+  }
+}
+
+function buildReminderMessage(e, cfg, env) {
+  const p = localParts(e.startMs, cfg.tz);
+  const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
+  const when = `${WD_LONG[dowOf(p)]} ${p.d}/${p.m}, ${clock}`;
+  const lines = ['Hi! Just a reminder of your booking tomorrow with Andy Auto AC Regas:'];
+  if (e.service) lines.push(`Service: ${e.service}`);
+  if (e.price) lines.push(`Price: ${e.price}`);
+  lines.push(`Time: ${when}`);
+  if (e.location) lines.push(`Address: ${e.location}`);
+  lines.push('', env.CONFIRM_FOOTER || 'Any changes, reply here or call Andy on 0478 701 289. See you then!');
+  return lines.join('\n');
+}
+
+async function findTomorrowBookings(env, cfg) {
+  const cal = await calendarUrl(env);
+  const today = todayInTz(cfg.tz);
+  const tom = new Date(today.y, today.m - 1, today.d + 1);
+  const t = { y: tom.getFullYear(), m: tom.getMonth() + 1, d: tom.getDate() };
+  const startMs = zonedToUtc(`${t.y}-${pad(t.m)}-${pad(t.d)}T00:00:00`, cfg.tz);
+  const endMs = zonedToUtc(`${t.y}-${pad(t.m)}-${pad(t.d)}T23:59:59`, cfg.tz);
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(startMs)}" end="${utcStamp(endMs)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+  const list = [];
+  for (const resp of xmlAll(r.text, 'response')) {
+    const ics = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!ics.includes('BEGIN:VEVENT')) continue;
+    const e = parseEvent(ics, cfg.tz);
+    if (!e.startMs) continue;
+    list.push(e);
+  }
+  return list.sort((a, b) => a.startMs - b.startMs);
+}
 
 async function onCustomerMessage(ev, env, origin) {
   const cfg = config(env);

@@ -8,5 +8,8 @@
       "binding": "BARK_COOLDOWN",
       "id": "926497b155284502b3ae42a5407cda1f"
     }
-  ]
+  ],
+  "triggers": {
+    "crons": ["0 22 * * *"]
+  }
 }
