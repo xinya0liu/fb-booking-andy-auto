@@ -2,5 +2,11 @@
   "name": "fb-booking-andy-auto",
   "main": "worker.js",
   "compatibility_date": "2026-10-01",
-  "keep_vars": true
+  "keep_vars": true,
+  "kv_namespaces": [
+    {
+      "binding": "BARK_COOLDOWN",
+      "id": "926497b155284502b3ae42a5407cda1f"
+    }
+  ]
 }

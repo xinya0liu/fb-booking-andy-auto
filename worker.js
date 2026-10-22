@@ -735,19 +735,31 @@ async function onCustomerMessage(ev, env, origin) {
   const cfg = config(env);
   const psid = ev.sender.id;
   const name = await getCustomerName(psid, env);
+
+  const kvKey = `bark-${psid}`;
+  const cooldownHours = 4;
+  if (env.BARK_COOLDOWN) {
+    const hit = await env.BARK_COOLDOWN.get(kvKey);
+    if (hit) return; // 4小时内已提醒过，跳过
+  }
+
   const bookings = await findAllBookings(env, cfg, psid).catch(() => []);
   let body = ev.message.text || '';
   if (bookings.length) {
     const history = bookings
       .map(e => {
         const p = localParts(e.startMs, cfg.tz);
-        const date = `${WD_SHORT[dowOf(p)]} ${p.d}/${p.m}`;
-        return `• ${[e.service, e.price].filter(Boolean).join(' ')} · ${date}`;
+        return `• ${[e.service, e.price].filter(Boolean).join(' ')} · ${p.label}`;
       })
       .join('\n');
     body = `${body}\n\n${history}`;
   }
+
   await bark(env, `💬 ${name || 'Customer'}`, body, cardLink(origin, name, env));
+
+  if (env.BARK_COOLDOWN) {
+    await env.BARK_COOLDOWN.put(kvKey, '1', { expirationTtl: cooldownHours * 3600 });
+  }
 }
 
 // ================= 读取消息 =================
