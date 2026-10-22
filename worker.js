@@ -737,18 +737,18 @@ async function onCustomerMessage(ev, env, origin) {
   const name = await getCustomerName(psid, env);
 
   const kvKey = `bark-${psid}`;
-  const cooldownHours = 4;
-  if (env.BARK_COOLDOWN) {
-    const hit = await env.BARK_COOLDOWN.get(kvKey);
-    if (hit) return; // 4小时内已提醒过，跳过
-  }
-
   const bookings = await findAllBookings(env, cfg, psid).catch(() => []);
   const title = bookings.length
     ? `💬 ${name || 'Customer'} / Old customer`
     : `💬 ${name || 'Customer'}`;
   let body = ev.message.text || '';
-  if (bookings.length) {
+
+  // 历史预约只在 4 小时内第一条消息时显示
+  const showHistory = bookings.length && env.BARK_COOLDOWN
+    ? !(await env.BARK_COOLDOWN.get(kvKey))
+    : bookings.length > 0;
+
+  if (showHistory) {
     const history = bookings
       .map(e => {
         const p = localParts(e.startMs, cfg.tz);
@@ -756,13 +756,12 @@ async function onCustomerMessage(ev, env, origin) {
       })
       .join('\n');
     body = `${history}\n─────────────────\n${body}`;
+    if (env.BARK_COOLDOWN) {
+      await env.BARK_COOLDOWN.put(kvKey, '1', { expirationTtl: 4 * 3600 });
+    }
   }
 
   await bark(env, title, body, cardLink(origin, name, env));
-
-  if (env.BARK_COOLDOWN) {
-    await env.BARK_COOLDOWN.put(kvKey, '1', { expirationTtl: cooldownHours * 3600 });
-  }
 }
 
 // ================= 读取消息 =================
