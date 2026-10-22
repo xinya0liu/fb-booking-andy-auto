@@ -817,7 +817,7 @@ async function printPage(env, origin) {
     const vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
     const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
     const isSms = !e.psid;
-    const bg = isSms ? '#e0e0e0' : (i % 2 === 0 ? '#fff' : '#f5f5f5');
+    const bg = isSms ? '#e0e0e0' : '#fff';
     const source = isSms ? 'SMS' : 'FB';
     return `<tr style="background:${bg}">
       <td class="n">${i + 1}</td>
@@ -825,8 +825,8 @@ async function printPage(env, origin) {
       <td class="time">${clock}</td>
       <td>${e.service || ''}</td>
       <td>${e.price || ''}</td>
-      <td>${vehicle}</td>
-      <td>${e.location || ''}</td>
+      <td class="veh">${vehicle}</td>
+      <td class="addr">${e.location || ''}</td>
       <td>${e.name || ''}</td>
       <td>${mobile}</td>
     </tr>`;
@@ -855,6 +855,8 @@ async function printPage(env, origin) {
   td { padding: 8px 10px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
   td.n { color: #aaa; width: 24px; font-size: 0.85em; }
   td.time { white-space: nowrap; font-weight: bold; }
+  td.addr { max-width: 180px; word-break: break-word; }
+  td.veh  { max-width: 140px; word-break: break-word; }
   .empty { color: #888; font-style: italic; }
   .src { color: #888; font-size: 0.8em; text-align: center; white-space: nowrap; width: 40px; }
   @media print { tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
