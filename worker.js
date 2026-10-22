@@ -742,9 +742,9 @@ async function handleScheduled(env) {
   const lines = bookings.map(e => {
     const p = localParts(e.startMs, cfg.tz);
     const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
-    return `• ${e.name || 'Customer'} – ${[e.service, e.price].filter(Boolean).join(' ')} · ${clock}`;
+    return [clock, e.service, e.location, e.name || 'Customer'].filter(Boolean).join(' · ');
   });
-  await bark(env, `📅 Tomorrow (${bookings.length} appointment${bookings.length > 1 ? 's' : ''})`, lines.join('\n'), '');
+  await bark(env, `📅 Tomorrow: ${bookings.length} appointment${bookings.length > 1 ? 's' : ''}`, lines.join('\n'), '');
 
   for (const e of bookings) {
     if (!e.psid) continue;
