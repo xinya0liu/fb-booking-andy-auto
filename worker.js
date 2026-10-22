@@ -393,7 +393,7 @@ ${transcript}`;
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
         end: str('HH:MM in 24-hour time, or "" if not mentioned'),
-        service: str('e.g. Car AC check and regas'),
+        service: str('Service type in 1-3 words based on what was discussed, e.g. "Regas", "Pressure Test", "Leak Check". Keep it short and specific.'),
         price: str('e.g. $150'),
         address: str('Service address'),
         mobile: str("Customer's mobile number"),
@@ -733,7 +733,8 @@ function mergeNotes(old, newLines, note) {
 }
 
 function buildSummary(name, service, price) {
-  return `${name} – ${service || 'Booking'}${price ? ` ${price}` : ''}`;
+  const svc = service || 'AC Service';
+  return `${svc}${price ? ` ${price}` : ''} – ${name}`;
 }
 
 const WD_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
