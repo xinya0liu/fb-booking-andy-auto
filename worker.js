@@ -308,7 +308,7 @@ async function doConfirmFromChat(ctx, f) {
   applyCustomLabel(psid, d.service, w.date, env);
 
   // 自动回复客人
-  const msg = customerMessage(d, w, env, env.CONFIRM_HEADER || 'Booking details – Andy Auto AC Regas');
+  const msg = customerMessage(d, w, env, env.CONFIRM_HEADER || 'Andy Auto AC Regas');
   let sent = null;
   if (env.AUTO_REPLY !== 'false') sent = await sendToCustomer(psid, msg, env);
 
@@ -675,7 +675,7 @@ async function doUpdateFromChat(ctx) {
   const when = r.t
     ? { date: r.w.date, start: r.w.start }
     : { date: { y: old.y, m: old.m, d: old.d }, start: { h: old.h, min: old.min } };
-  const msg = customerMessage(d, when, env, env.UPDATE_HEADER || 'Updated booking details – Andy Auto AC Regas');
+  const msg = customerMessage(d, when, env, env.UPDATE_HEADER || 'Andy Auto AC Regas – Updated');
   let sent = null;
   if (env.AUTO_REPLY !== 'false') sent = await sendToCustomer(psid, msg, env);
 
