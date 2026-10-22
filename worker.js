@@ -746,7 +746,7 @@ async function handleScheduled(env) {
     const suburb = e.location ? e.location.replace(/\s+(QLD|NSW|VIC|WA|SA|TAS|ACT|NT)\b.*/i, '').split(/\s+/).pop() : '';
     return [clock, e.service, vehicle, suburb, e.name || 'Customer'].filter(Boolean).join(' · ');
   });
-  await bark(env, `📅 Tomorrow: ${bookings.length} appointment${bookings.length > 1 ? 's' : ''}`, lines.join('\n'), '');
+  await bark(env, `📅 Tomorrow: ${bookings.length} APPOINTMENT${bookings.length > 1 ? 'S' : ''} FROM FB`, lines.join('\n'), '');
 
   for (const e of bookings) {
     if (!e.psid) continue;
