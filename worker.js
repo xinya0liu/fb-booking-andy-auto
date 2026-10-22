@@ -753,6 +753,7 @@ async function handleScheduled(cron, env) {
 
   // 0 0 * * * = 10am Brisbane → Messenger reminder to customers
   if (cron === '0 0 * * *') {
+    if (env.REMINDER_CUSTOMER === 'false') return;
     for (const e of bookings) {
       if (!e.psid) continue;
       await sendToCustomer(e.psid, buildReminderMessage(e, cfg, env), env);
