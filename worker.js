@@ -18,9 +18,9 @@
  *   Booking cancelled – your booking for Sunday 25/10 2pm has been cancelled.
  *
  * 只想更新日历、不要 AI、不要自动回复客人时，用这两个开头（照消息里写的栏位处理）：
- *   Booked you in   新建，必须有 "Time:" 行
- *   Booking change  修改，只写有变的行
- *     Booked you in – Andy Auto AC Regas
+ *   We've booked you in        新建，必须有 "Time:" 行
+ *   We've updated your booking 修改，只写有变的行
+ *     We've booked you in – Andy Auto AC Regas
  *     Service: Car AC regas
  *     Price: $150
  *     Time: Tomorrow 10am
@@ -131,16 +131,16 @@ function config(env) {
 }
 
 // 关键词必须在消息的最开头（前面可以有 emoji、空格、标点），聊天中间顺口打出来的不算
-//   Booking confirmed / Booking updated → 读对话、AI 整理、更新日历、自动回复客人
-//   Booked you in / Booking change      → 只照消息里写的栏位更新日历，不用 AI、不回复客人
-//   Booking cancelled                   → 删除预约
+//   Booking confirmed / Booking updated   → 读对话、AI 整理、更新日历、自动回复客人
+//   We've booked you in / We've updated your booking → 只照消息里写的栏位更新日历，不用 AI、不回复客人
+//   Booking cancelled                     → 删除预约
 function detectAction(text) {
   const head = text.trim().replace(/^[^A-Za-z]+/, '');
   if (/^booking\s+cancel+ed\b/i.test(head)) return { action: 'cancel' };
   if (/^booking\s+updated\b/i.test(head)) return { action: 'update', manual: false };
   if (/^booking\s+confirmed\b/i.test(head)) return { action: 'confirm', manual: false };
-  if (/^booking\s+changed?\b/i.test(head)) return { action: 'update', manual: true };
-  if (/^booked\s+you\s+in\b/i.test(head)) return { action: 'confirm', manual: true };
+  if (/^we've\s+updated\s+your\s+booking\b/i.test(head)) return { action: 'update', manual: true };
+  if (/^we've\s+booked\s+you\s+in\b/i.test(head)) return { action: 'confirm', manual: true };
   return null;
 }
 
@@ -308,7 +308,7 @@ async function doConfirmFromChat(ctx, f) {
   applyCustomLabel(psid, d.service, w.date, env);
 
   // 自动回复客人
-  const msg = customerMessage(d, w, env, env.CONFIRM_HEADER || '✅ Booking details – Andy Auto AC Regas');
+  const msg = customerMessage(d, w, env, env.CONFIRM_HEADER || 'Booking details – Andy Auto AC Regas');
   let sent = null;
   if (env.AUTO_REPLY !== 'false') sent = await sendToCustomer(psid, msg, env);
 
@@ -675,7 +675,7 @@ async function doUpdateFromChat(ctx) {
   const when = r.t
     ? { date: r.w.date, start: r.w.start }
     : { date: { y: old.y, m: old.m, d: old.d }, start: { h: old.h, min: old.min } };
-  const msg = customerMessage(d, when, env, env.UPDATE_HEADER || '🔄 Updated booking details – Andy Auto AC Regas');
+  const msg = customerMessage(d, when, env, env.UPDATE_HEADER || 'Updated booking details – Andy Auto AC Regas');
   let sent = null;
   if (env.AUTO_REPLY !== 'false') sent = await sendToCustomer(psid, msg, env);
 
