@@ -207,7 +207,7 @@ async function doConfirm(ctx) {
   });
   if (!created) return;
 
-  applyCustomLabel(psid, f.service, w.date, env);
+  applyCustomLabel(ctx.psid, f.service, w.date, env);
 
   const body = [t.label, f.service, f.price].filter(Boolean).join(' · ') + (w.warning ? `\n${w.warning}` : '') +
     overlapLine(created.overlaps) + (fallback ? `\n${fallback}` : '');
