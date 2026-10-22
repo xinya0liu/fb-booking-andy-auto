@@ -207,6 +207,8 @@ async function doConfirm(ctx) {
   });
   if (!created) return;
 
+  applyCustomLabel(psid, f.service, w.date, env);
+
   const body = [t.label, f.service, f.price].filter(Boolean).join(' · ') + (w.warning ? `\n${w.warning}` : '') +
     overlapLine(created.overlaps) + (fallback ? `\n${fallback}` : '');
   await bark(env, `📅 Booking added: ${name}`, body, link);
@@ -302,6 +304,8 @@ async function doConfirmFromChat(ctx, f) {
 
   const created = await saveNewBooking(ctx, { t, service: d.service, price: d.price, address: d.address, notes });
   if (!created) return;
+
+  applyCustomLabel(psid, d.service, w.date, env);
 
   // 自动回复客人
   const msg = customerMessage(d, w, env, env.CONFIRM_HEADER || '✅ Booking details – Andy Auto AC Regas');
@@ -452,6 +456,39 @@ function customerMessage(d, w, env, header) {
   if (d.vehicle) lines.push(`Vehicle: ${d.vehicle}`);
   lines.push('', env.CONFIRM_FOOTER || 'Any changes, reply here or call Andy on 0478 701 289. See you then!');
   return lines.join('\n');
+}
+
+async function applyCustomLabel(psid, service, date, env) {
+  const token = `access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN || '')}`;
+  const base = `https://graph.facebook.com/${config(env).graph}`;
+  const labelName = `${service || 'AC Service'} ${date.d}/${date.m}`;
+  try {
+    const listR = await fetch(`${base}/me/custom_labels?fields=id,name&limit=100&${token}`);
+    const list = await listR.json();
+    let labelId;
+    const found = (list.data || []).find(l => l.name === labelName);
+    if (found) {
+      labelId = found.id;
+    } else {
+      const createR = await fetch(`${base}/me/custom_labels?${token}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: labelName }),
+      });
+      const created = await createR.json();
+      if (created.error) throw new Error(created.error.message);
+      labelId = created.id;
+    }
+    const applyR = await fetch(`${base}/${labelId}/label?${token}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ user: psid }),
+    });
+    const applied = await applyR.json();
+    if (applied.error) throw new Error(applied.error.message);
+  } catch (e) {
+    console.error('applyCustomLabel error:', e.message);
+  }
 }
 
 async function sendToCustomer(psid, text, env) {
