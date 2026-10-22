@@ -744,6 +744,9 @@ async function onCustomerMessage(ev, env, origin) {
   }
 
   const bookings = await findAllBookings(env, cfg, psid).catch(() => []);
+  const title = bookings.length
+    ? `💬 ${name || 'Customer'} / Old customer`
+    : `💬 ${name || 'Customer'}`;
   let body = ev.message.text || '';
   if (bookings.length) {
     const history = bookings
@@ -752,10 +755,10 @@ async function onCustomerMessage(ev, env, origin) {
         return `• ${[e.service, e.price].filter(Boolean).join(' ')} · ${p.label}`;
       })
       .join('\n');
-    body = `${body}\n\n${history}`;
+    body = `${history}\n─────────────────\n${body}`;
   }
 
-  await bark(env, `💬 ${name || 'Customer'}`, body, cardLink(origin, name, env));
+  await bark(env, title, body, cardLink(origin, name, env));
 
   if (env.BARK_COOLDOWN) {
     await env.BARK_COOLDOWN.put(kvKey, '1', { expirationTtl: cooldownHours * 3600 });
