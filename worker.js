@@ -756,11 +756,13 @@ function buildReminderMessage(e, cfg, env) {
   const p = localParts(e.startMs, cfg.tz);
   const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
   const when = `${WD_LONG[dowOf(p)]} ${p.d}/${p.m}, ${clock}`;
+  const vehicle = (e.description || '').match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
   const lines = ['Hi! Just a reminder of your booking tomorrow with Andy Auto AC Regas:'];
   if (e.service) lines.push(`Service: ${e.service}`);
   if (e.price) lines.push(`Price: ${e.price}`);
   lines.push(`Time: ${when}`);
   if (e.location) lines.push(`Address: ${e.location}`);
+  if (vehicle) lines.push(`Vehicle: ${vehicle}`);
   lines.push('', env.CONFIRM_FOOTER || 'Any changes, reply here or call Andy on 0478 701 289. See you then!');
   return lines.join('\n');
 }
