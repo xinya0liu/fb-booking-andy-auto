@@ -735,7 +735,19 @@ async function onCustomerMessage(ev, env, origin) {
   const cfg = config(env);
   const psid = ev.sender.id;
   const name = await getCustomerName(psid, env);
-  await bark(env, `💬 ${name || 'Customer'}`, ev.message.text, cardLink(origin, name, env));
+  const bookings = await findAllBookings(env, cfg, psid).catch(() => []);
+  let body = ev.message.text || '';
+  if (bookings.length) {
+    const history = bookings
+      .map(e => {
+        const p = localParts(e.startMs, cfg.tz);
+        const date = `${WD_SHORT[dowOf(p)]} ${p.d}/${p.m}`;
+        return `• ${[e.service, e.price].filter(Boolean).join(' ')} · ${date}`;
+      })
+      .join('\n');
+    body = `${body}\n\n${history}`;
+  }
+  await bark(env, `💬 ${name || 'Customer'}`, body, cardLink(origin, name, env));
 }
 
 // ================= 读取消息 =================
@@ -992,6 +1004,29 @@ async function findBookings(env, cfg, psid) {
     list.push(e);
   }
   return list.sort((a, b) => a.startMs - b.startMs);
+}
+
+async function findAllBookings(env, cfg, psid) {
+  const cal = await calendarUrl(env);
+  const now = Date.now();
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(now - 730 * 864e5)}" end="${utcStamp(now + 400 * 864e5)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+  const list = [];
+  for (const resp of xmlAll(r.text, 'response')) {
+    const ics = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!ics.includes('BEGIN:VEVENT')) continue;
+    const e = parseEvent(ics, cfg.tz);
+    if (!e.startMs) continue;
+    const tagged = e.psid || (e.uid.match(/-(\d+)@fb-booking$/) || [])[1];
+    if (tagged ? tagged !== psid : !e.description.includes(psid)) continue;
+    list.push(e);
+  }
+  return list.sort((a, b) => b.startMs - a.startMs); // 最近的排最前
 }
 
 // 同一时段日历里的其他事件（不论是谁的，包括手动建立的）
