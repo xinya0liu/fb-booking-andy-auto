@@ -312,7 +312,7 @@ async function doConfirmFromChat(ctx, f) {
   let sent = null;
   if (env.AUTO_REPLY !== 'false') sent = await sendToCustomer(psid, msg, env);
 
-  const missing = ['service', 'price', 'address', 'mobile'].filter(k => !d[k]).map(k => CHAT_FIELDS.find(x => x[0] === k)[1]);
+  const missing = ['service', 'price', 'address'].filter(k => !d[k]).map(k => CHAT_FIELDS.find(x => x[0] === k)[1]);
   const lines = [
     [t.label, d.service, d.price].filter(Boolean).join(' · '),
     d.address, d.mobile && `📱 ${d.mobile}`, d.vehicle && `🚗 ${d.vehicle}`, d.notes && `📝 ${d.notes}`,
