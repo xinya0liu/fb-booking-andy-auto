@@ -773,11 +773,19 @@ async function handleScheduled(cron, env) {
     const p = localParts(e.startMs, cfg.tz);
     const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
     const desc = e.description || '';
-    const vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
+    let service = e.service || '';
+    let price = e.price || '';
+    let vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
+    if (!e.psid && (!service || !vehicle)) {
+      const parsed = parseSummaryFields(e.summary || '');
+      if (!service) service = parsed.service;
+      if (!price) price = parsed.price;
+      if (!vehicle) vehicle = parsed.vehicle;
+    }
     const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
     const parts = [clock];
-    if (e.service) parts.push(e.service);
-    if (e.price) parts.push(e.price);
+    if (service) parts.push(service);
+    if (price) parts.push(price);
     const row1 = parts.join(' · ');
     const row2 = [vehicle, e.location].filter(Boolean).join(' · ');
     const row3 = [e.name || 'Customer', mobile].filter(Boolean).join(' · ');
@@ -803,6 +811,27 @@ function buildReminderMessage(e, cfg, env) {
   return lines.join('\n');
 }
 
+function parseSummaryFields(summary) {
+  // Strip customer name (FB format: "Service $Price – Name")
+  const s = summary.replace(/\s*–\s*.+$/, '').trim();
+  const priceMatch = s.match(/\$[\d,]+/);
+  const price = priceMatch ? priceMatch[0] : '';
+  const withoutPrice = s.replace(/\$[\d,]+/, '').trim();
+  // Split service from vehicle: vehicle usually starts with a 4-digit year
+  const yearIdx = withoutPrice.search(/\b(19|20)\d{2}\b/);
+  let service = '', vehicle = '';
+  if (yearIdx > 0) {
+    service = withoutPrice.slice(0, yearIdx).trim();
+    vehicle = withoutPrice.slice(yearIdx).trim();
+  } else {
+    // No year — first word is service, rest is vehicle
+    const parts = withoutPrice.split(/\s+/);
+    service = parts[0] || '';
+    vehicle = parts.slice(1).join(' ');
+  }
+  return { service, price, vehicle };
+}
+
 async function printPage(env, origin) {
   const cfg = config(env);
   const bookings = await findTomorrowBookings(env, cfg);
@@ -814,17 +843,26 @@ async function printPage(env, origin) {
     const p = localParts(e.startMs, cfg.tz);
     const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
     const desc = e.description || '';
-    const vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
-    const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
     const isSms = !e.psid;
+    // FB bookings: service/price from X-FB fields; SMS: parse from summary
+    let service = e.service || '';
+    let price = e.price || '';
+    let vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
+    if (isSms && (!service || !vehicle)) {
+      const parsed = parseSummaryFields(e.summary || '');
+      if (!service) service = parsed.service;
+      if (!price) price = parsed.price;
+      if (!vehicle) vehicle = parsed.vehicle;
+    }
+    const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
     const bg = isSms ? '#e0e0e0' : '#fff';
     const source = isSms ? 'SMS' : 'FB';
     return `<tr style="background:${bg}">
       <td class="n">${i + 1}</td>
       <td class="src">${source}</td>
       <td class="time">${clock}</td>
-      <td>${e.service || ''}</td>
-      <td>${e.price || ''}</td>
+      <td>${service}</td>
+      <td>${price}</td>
       <td class="veh">${vehicle}</td>
       <td class="addr">${e.location || ''}</td>
       <td>${e.name || ''}</td>
