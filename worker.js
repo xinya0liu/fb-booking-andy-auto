@@ -95,6 +95,21 @@ export default {
       return printPage(env, url.origin);
     }
 
+    // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
+    if (req.method === 'POST' && url.pathname === '/sms-booking' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      const cfg = config(env);
+      try {
+        const text = await req.text();
+        await doSmsBooking(text, env, cfg);
+        return new Response('ok');
+      } catch (e) {
+        console.error('sms-booking error', e);
+        await bark(env, '⚠️ SMS booking failed', e.message, '');
+        return new Response(e.message, { status: 500 });
+      }
+    }
+
     // Meta webhook 验证
     if (req.method === 'GET') {
       if (url.searchParams.get('hub.mode') === 'subscribe' &&
@@ -228,6 +243,134 @@ async function doConfirm(ctx) {
   const body = [t.label, f.service, f.price].filter(Boolean).join(' · ') + (w.warning ? `\n${w.warning}` : '') +
     overlapLine(created.overlaps) + (fallback ? `\n${fallback}` : '');
   await bark(env, `📅 Booking added: ${name}`, body, barkTimeLink(t.label, env), t.label);
+}
+
+// ================= SMS / 电话预约 =================
+
+async function doSmsBooking(conversationText, env, cfg) {
+  if (!conversationText.trim()) throw new Error('Empty conversation.');
+  const ai = await aiFromSmsChat(conversationText, cfg, env);
+  if (!ai.date || !ai.start) throw new Error("Couldn't find the booking date and time in the conversation.");
+
+  const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
+  assertFuture(t, cfg);
+
+  const name = ai.name || 'SMS Customer';
+  const link = smsLink(ai.mobile);
+
+  const notes = ['SMS booking'];
+  const FIELDS = [['service','Service'],['price','Price'],['time','time'],['address','Address'],['mobile','Mobile'],['vehicle','Vehicle'],['notes','Notes']];
+  for (const [k, label] of FIELDS) {
+    if (k === 'time') { notes.push(`Time: ${t.label}`); continue; }
+    if (ai[k]) notes.push(`${label}: ${ai[k]}`);
+  }
+
+  const id = (await sha256hex(`sms-${name}-${t.start.y ?? ai.date.y}-${pad(ai.date.m)}-${pad(ai.date.d)}-${pad(ai.start.h)}${pad(ai.start.min)}`)).slice(0, 32);
+  const uid = `${id}-sms@fb-booking`;
+  const overlaps = await findOverlaps(env, cfg, zonedToUtc(t.start, cfg.tz), zonedToUtc(t.end, cfg.tz), uid);
+
+  const ics = buildEvent({
+    uid,
+    startMs: zonedToUtc(t.start, cfg.tz),
+    endMs: zonedToUtc(t.end, cfg.tz),
+    summary: buildSummary(name, ai.service, ai.price),
+    location: ai.address,
+    description: notes.join('\n'),
+    url: link,
+    x: { psid: '', name, service: ai.service, price: ai.price },
+  });
+
+  const cal = await calendarUrl(env);
+  try {
+    await dav(env, 'PUT', `${cal}${id}.ics`, { body: ics, headers: { 'if-none-match': '*' } });
+  } catch (e) {
+    if (e.status === 412) {
+      await bark(env, `ℹ️ Already in calendar: ${name}`, t.label, link);
+      return;
+    }
+    throw e;
+  }
+
+  const lines = [
+    [t.label, ai.service, ai.price].filter(Boolean).join(' · '),
+    ai.address, ai.mobile && `📱 ${ai.mobile}`, ai.vehicle && `🚗 ${ai.vehicle}`, ai.notes && `📝 ${ai.notes}`,
+  ].filter(Boolean);
+  if (overlaps.length) lines.push(overlapLine(overlaps).trim());
+  await bark(env, `📅 SMS Booking added: ${name}`, lines.join('\n'), barkTimeLink(t.label, env), t.label);
+}
+
+async function aiFromSmsChat(conversationText, cfg, env) {
+  const t = todayInTz(cfg.tz);
+  const prompt =
+`Today is ${WD_LONG[dowOf(t)]} ${t.y}-${pad(t.m)}-${pad(t.d)}, time zone ${cfg.tz}.
+Below is an SMS or phone conversation between a mobile car air-conditioning business and a customer.
+The business owner is confirming a booking. Extract the booking details and save them with the save_booking tool.
+
+Rules:
+- Dates are Australian (day/month). Words like "tomorrow" or "Sunday" are relative to today's date unless a specific date is given.
+- Use the final agreed values (last price quoted, time the customer accepted).
+- The business's own phone number is 0478 701 289. Never use it as the customer's mobile.
+- For the customer's name: use whatever name appears in the conversation, or "" if unknown.
+- Leave a field as "" if not mentioned. Do not guess or invent anything.
+- notes: only things the technician should know. Keep it short, or "".
+
+Conversation:
+${conversationText}`;
+
+  const str = d => ({ type: 'string', description: d });
+  const tool = {
+    name: 'save_booking',
+    description: 'Save the booking details.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: str("Customer's name, or \"\" if unknown"),
+        date: str('YYYY-MM-DD, or "" if unknown'),
+        start: str('HH:MM in 24-hour time, or "" if unknown'),
+        end: str('HH:MM in 24-hour time, or "" if not mentioned'),
+        service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test"'),
+        price: str('e.g. $150'),
+        address: str('Service address'),
+        mobile: str("Customer's mobile number"),
+        vehicle: str('e.g. 2016 Toyota Camry'),
+        notes: str('Short notes for the technician'),
+      },
+      required: ['name', 'date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'notes'],
+    },
+  };
+
+  let o;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: env.AI_MODEL || 'claude-haiku-5-5',
+        max_tokens: 1000,
+        tools: [tool],
+        tool_choice: { type: 'tool', name: 'save_booking' },
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    const raw = await r.text();
+    let j;
+    try { j = JSON.parse(raw); } catch { throw new Error(`AI returned HTTP ${r.status}: ${raw.slice(0, 200)}`); }
+    if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
+    o = (j.content || []).find(c => c.type === 'tool_use')?.input;
+    if (!o) throw new Error(`No booking details returned: ${JSON.stringify(j.content || j).slice(0, 200)}`);
+  } catch (e) {
+    throw new Error(`AI couldn't read the conversation: ${e.message}`);
+  }
+
+  const res = { name: String(o.name || '').trim() };
+  for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'notes']) res[k] = String(o[k] || '').trim();
+  const dm = String(o.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const sm = String(o.start || '').match(/^(\d{1,2}):(\d{2})$/);
+  const em = String(o.end || '').match(/^(\d{1,2}):(\d{2})$/);
+  res.date = dm ? { y: +dm[1], m: +dm[2], d: +dm[3] } : null;
+  res.start = sm ? { h: +sm[1], min: +sm[2] } : null;
+  res.end = em ? { h: +em[1], min: +em[2] } : null;
+  return res;
 }
 
 // 写入新预约。已经有同一时间的预约、或 Meta 重复推送时返回 false
@@ -1524,6 +1667,15 @@ function cardLink(origin, name, env = {}) {
   }
   if (!origin) return '';
   return `${origin}/c?n=${encodeURIComponent(name)}`;
+}
+
+// 把手机号（0412345678 或 +61412345678）转成 sms:// 深链接
+function smsLink(mobile) {
+  if (!mobile) return '';
+  const digits = mobile.replace(/[^\d+]/g, '');
+  if (!digits) return '';
+  const e164 = digits.startsWith('+') ? digits : '+61' + digits.replace(/^0/, '');
+  return `sms://${e164}`;
 }
 
 function barkTimeLink(timeLabel, env = {}) {
