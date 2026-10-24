@@ -100,8 +100,14 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       const cfg = config(env);
       try {
-        const text = await req.text();
-        await doSmsBooking(text, env, cfg);
+        const contentType = (req.headers.get('content-type') || '').split(';')[0].trim();
+        if (contentType.startsWith('image/')) {
+          const buf = await req.arrayBuffer();
+          await doSmsBookingFromImage(buf, contentType, env, cfg);
+        } else {
+          const text = await req.text();
+          await doSmsBooking(text, env, cfg);
+        }
         return new Response('ok');
       } catch (e) {
         console.error('sms-booking error', e);
@@ -250,7 +256,17 @@ async function doConfirm(ctx) {
 async function doSmsBooking(conversationText, env, cfg) {
   if (!conversationText.trim()) throw new Error('Empty conversation.');
   const ai = await aiFromSmsChat(conversationText, cfg, env);
-  if (!ai.date || !ai.start) throw new Error("Couldn't find the booking date and time in the conversation.");
+  await saveSmsFromAi(ai, env, cfg);
+}
+
+async function doSmsBookingFromImage(imageBuffer, mediaType, env, cfg) {
+  const base64 = arrayBufferToBase64(imageBuffer);
+  const ai = await aiFromScreenshot(base64, mediaType, cfg, env);
+  await saveSmsFromAi(ai, env, cfg);
+}
+
+async function saveSmsFromAi(ai, env, cfg) {
+  if (!ai.date || !ai.start) throw new Error("Couldn't find the booking date and time.");
 
   const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
   assertFuture(t, cfg);
@@ -265,7 +281,7 @@ async function doSmsBooking(conversationText, env, cfg) {
     if (ai[k]) notes.push(`${label}: ${ai[k]}`);
   }
 
-  const id = (await sha256hex(`sms-${name}-${t.start.y ?? ai.date.y}-${pad(ai.date.m)}-${pad(ai.date.d)}-${pad(ai.start.h)}${pad(ai.start.min)}`)).slice(0, 32);
+  const id = (await sha256hex(`sms-${name}-${ai.date.y}-${pad(ai.date.m)}-${pad(ai.date.d)}-${pad(ai.start.h)}${pad(ai.start.min)}`)).slice(0, 32);
   const uid = `${id}-sms@fb-booking`;
   const overlaps = await findOverlaps(env, cfg, zonedToUtc(t.start, cfg.tz), zonedToUtc(t.end, cfg.tz), uid);
 
@@ -297,6 +313,91 @@ async function doSmsBooking(conversationText, env, cfg) {
   ].filter(Boolean);
   if (overlaps.length) lines.push(overlapLine(overlaps).trim());
   await bark(env, `📅 SMS Booking added: ${name}`, lines.join('\n'), barkTimeLink(t.label, env), t.label);
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 8192;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunkSize, bytes.length)));
+  }
+  return btoa(binary);
+}
+
+async function aiFromScreenshot(base64, mediaType, cfg, env) {
+  const t = todayInTz(cfg.tz);
+  const safeType = ['image/jpeg','image/png','image/gif','image/webp'].includes(mediaType) ? mediaType : 'image/jpeg';
+  const prompt =
+`Today is ${WD_LONG[dowOf(t)]} ${t.y}-${pad(t.m)}-${pad(t.d)}, time zone ${cfg.tz}.
+This is a screenshot of an SMS conversation. The business owner runs a mobile car air-conditioning service.
+Extract the booking details and save them with the save_booking tool.
+
+Rules:
+- Dates are Australian (day/month). Words like "tomorrow" or "Sunday" are relative to today's date.
+- Use the final agreed values (last price quoted, time the customer accepted).
+- The business owner's phone number is 0478 701 289. Never use it as the customer's mobile.
+- The customer's name is usually shown at the top of the screen as the conversation header.
+- Leave a field as "" if not mentioned. Do not guess or invent anything.
+- notes: only things the technician should know. Keep it short, or "".`;
+
+  const str = d => ({ type: 'string', description: d });
+  const tool = {
+    name: 'save_booking',
+    description: 'Save the booking details extracted from the screenshot.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: str("Customer's name from the conversation header, or \"\" if not visible"),
+        date: str('YYYY-MM-DD, or "" if unknown'),
+        start: str('HH:MM in 24-hour time, or "" if unknown'),
+        end: str('HH:MM in 24-hour time, or "" if not mentioned'),
+        service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test"'),
+        price: str('e.g. $150'),
+        address: str('Service address'),
+        mobile: str("Customer's mobile number"),
+        vehicle: str('e.g. 2016 Toyota Camry'),
+        notes: str('Short notes for the technician'),
+      },
+      required: ['name', 'date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'notes'],
+    },
+  };
+
+  let o;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: env.AI_MODEL || 'claude-haiku-5-5',
+        max_tokens: 1000,
+        tools: [tool],
+        tool_choice: { type: 'tool', name: 'save_booking' },
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: safeType, data: base64 } },
+          { type: 'text', text: prompt },
+        ]}],
+      }),
+    });
+    const raw = await r.text();
+    let j;
+    try { j = JSON.parse(raw); } catch { throw new Error(`AI returned HTTP ${r.status}: ${raw.slice(0, 200)}`); }
+    if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
+    o = (j.content || []).find(c => c.type === 'tool_use')?.input;
+    if (!o) throw new Error(`No booking details returned: ${JSON.stringify(j.content || j).slice(0, 200)}`);
+  } catch (e) {
+    throw new Error(`AI couldn't read the screenshot: ${e.message}`);
+  }
+
+  const res = { name: String(o.name || '').trim() };
+  for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'notes']) res[k] = String(o[k] || '').trim();
+  const dm = String(o.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const sm = String(o.start || '').match(/^(\d{1,2}):(\d{2})$/);
+  const em = String(o.end || '').match(/^(\d{1,2}):(\d{2})$/);
+  res.date = dm ? { y: +dm[1], m: +dm[2], d: +dm[3] } : null;
+  res.start = sm ? { h: +sm[1], min: +sm[2] } : null;
+  res.end = em ? { h: +em[1], min: +em[2] } : null;
+  return res;
 }
 
 async function aiFromSmsChat(conversationText, cfg, env) {
