@@ -99,21 +99,20 @@ export default {
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       const cfg = config(env);
-      try {
-        const contentType = (req.headers.get('content-type') || '').split(';')[0].trim();
-        if (contentType.startsWith('image/')) {
-          const buf = await req.arrayBuffer();
-          await doSmsBookingFromImage(buf, contentType, env, cfg);
-        } else {
-          const text = await req.text();
-          await doSmsBooking(text, env, cfg);
-        }
-        return new Response('ok');
-      } catch (e) {
-        console.error('sms-booking error', e);
-        await bark(env, '⚠️ SMS booking failed', e.message, '');
-        return new Response(e.message, { status: 500 });
+      const contentType = (req.headers.get('content-type') || '').split(';')[0].trim();
+      const errHandler = e => { console.error('sms-booking error', e); return bark(env, '⚠️ SMS booking failed', e.message, ''); };
+      if (contentType.startsWith('image/')) {
+        const buf = await req.arrayBuffer();
+        ctx.waitUntil(doSmsBookingFromImage(buf, contentType, env, cfg).catch(errHandler));
+      } else if (contentType === 'application/json') {
+        const j = await req.json();
+        const buf = Uint8Array.from(atob(j.image), c => c.charCodeAt(0)).buffer;
+        ctx.waitUntil(doSmsBookingFromImage(buf, j.type || 'image/jpeg', env, cfg).catch(errHandler));
+      } else {
+        const text = await req.text();
+        ctx.waitUntil(doSmsBooking(text, env, cfg).catch(errHandler));
       }
+      return new Response('ok');
     }
 
     // Meta webhook 验证
