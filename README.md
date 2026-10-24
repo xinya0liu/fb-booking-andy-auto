@@ -33,17 +33,20 @@ Andy Auto AC Regas 的预约自动化。在 Facebook Messenger 回复客人时�
 你在 Business Suite 回复客人（开头是上面五个之一）
             │
             ▼
-Meta 把“专页发出的消息”推送给 Worker（message_echoes）
+Meta 把”专页发出的消息”推送给 Worker（message_echoes）
             │
             ▼
 Cloudflare Worker（worker.js）
   ├─ Booking confirmed / updated：读取对话 → AI 整理资料
   ├─ 写入 / 修改 / 删除 iCloud 日历里的事件（CalDAV）
   ├─ Booking confirmed / updated：用专页自动回复客人完整资料
-  └─ 推送 Bark 通知给所有管理员
+  └─ 推送 Bark 通知给所有管理员（点通知自动复制预约时间到剪贴板）
             │
             ▼
 iPhone 日历几乎马上更新；点通知或事件里的链接，打开客人卡片，一键复制名字并打开收件箱
+
+每晚 7 点（Brisbane）→ Bark 推送明天预约清单，附打印页链接
+每早 10 点（Brisbane）→ 自动给 FB 预约客人发送提醒消息
 ```
 
 ## 文件说明

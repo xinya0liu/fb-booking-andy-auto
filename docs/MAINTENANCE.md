@@ -85,19 +85,23 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
 
 | 区块 | 作用 |
 |---|---|
-| `export default { fetch }` | 入口：`/c` 客人卡片、`/check` 检查页、`/go` 旧链接中转（只为旧事件保留）、Meta webhook 验证与接收 |
+| `export default { fetch, scheduled }` | 入口：`/c` 客人卡片、`/check` 检查页、`/print` 打印页、`/test-bark` 手动触发明日提醒、`/go` 旧链接中转、Meta webhook 验证与接收；`scheduled` 处理两个定时任务 |
+| `handleScheduled` | 定时任务：`0 0 * * *`（早 10 点 Brisbane）发客人提醒；`0 9 * * *`（晚 7 点 Brisbane）推送明日预约 Bark |
+| `findTomorrowBookings` | 从 iCloud 日历读取明天所有预约；`skipToday: true` 时排除当天（用于客人提醒） |
+| `parseSummaryFields` | 从 SMS 预约的日历标题（如 `AC Regas 2018 Toyota $150`）解析出服务、车型、价格 |
+| `barkTimeLink` | 生成 `shortcuts://` 链接，触发 Shortcut 将预约时间复制到剪贴板 |
 | `onPageMessage` / `detectAction` | 看消息开头，判断是哪一种操作、要不要用 AI |
-| `doConfirm` / `doUpdate` / `doCancel` | 三种操作的入口；包含“AI 失败时改用消息内容”的后备 |
+| `doConfirm` / `doUpdate` / `doCancel` | 三种操作的入口；包含”AI 失败时改用消息内容”的后备 |
 | `doConfirmFromChat` / `doUpdateFromChat` | AI 模式：读对话、整理、写日历、自动回复客人 |
 | `readConversation` / `aiFromChat` | 从 Facebook 读对话；请 AI 用固定格式（工具调用 `save_booking`）回传资料 |
 | `customerMessage` / `sendToCustomer` | 组合并发送给客人的确认消息 |
 | `saveNewBooking` / `applyUpdate` | 写入新预约 / 套用修改（两种模式共用） |
 | `findOverlaps` / `assertFuture` | 撞时间检查、时间已过检查 |
 | `readFields` / `extraFields` / `mergeNotes` | 读取消息里的栏位、整理备注 |
-| `parseDate` / `parseWhenParts` / `parseClock` / `buildTimes` | 读懂各种时间写法 |
+| `parseDate` / `parseWhenParts` / `parseClock` / `buildTimes` | 读懂各种时间写法；`t.label` 格式为 `24/10 Saturday 10am` |
 | iCloud 日历（CalDAV）区块 | 登录、找日历、查询、写入、修改、删除事件 |
 | iCalendar 区块 | 产生和修改 .ics 事件内容 |
-| Meta / 链接 / Bark 区块 | 查客人名字（查不到就从对话参与者找）、客人卡片 `customerCard`、推送通知 |
+| Meta / 链接 / Bark 区块 | 查客人名字（查不到就从对话参与者找）、客人卡片 `customerCard`、推送通知 `bark` |
 
 ### 几个设计上的重点（改代码时不要破坏）
 

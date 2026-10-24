@@ -166,15 +166,39 @@ AI 会自己看懂对话里的时间。下面的规则适用于你**自己写的
   ```
 - 你可以在 iPhone 上手动改事件（拖时间、加提醒等），系统之后修改时会读取最新的版本，你加的提醒会保留。
 
+## 每日预约提醒
+
+系统每天**晚上 7 点（布里斯班时间）**自动推送明天的预约清单：
+
+- 有预约时：`📅 Tomorrow: 3 APPOINTMENTS`，正文列出每个预约的时间、客人名字、服务、价格、地址。
+- 没有预约时：`📅 Tomorrow: No bookings`。
+
+通知底部附有**打印链接**，点击后在浏览器打开明天的预约表，可以直接打印（A4 横向排版）。
+
+另外，每天**早上 10 点（布里斯班时间）**自动给明天有 Facebook 预约的客人发送提醒消息。SMS 预约的客人不会收到（没有对话）。
+
+### 打印页
+
+打开浏览器：
+
+```
+https://<worker 网址>/print?secret=<VERIFY_TOKEN>
+```
+
+显示明天所有预约的表格，包含时间、名字、服务、价格、地址、电话、车型。
+- **白色行**：来自 Facebook Messenger 的预约
+- **浅灰色行**：来自短信（SMS）的预约，无法自动发送提醒
+
 ## Bark 通知的意思
 
 | 通知 | 意思 | 要做什么 |
 |---|---|---|
 | 📅 Booking added | 新预约已写入日历，下面列出整理的资料 | 核对一下 |
+| 📅 Tomorrow: X APPOINTMENTS | 明天的预约清单（每晚 7 点推送） | 点通知里的链接可打印 |
 | ✉️ Confirmation sent to the customer | 已自动回复客人 | 无 |
 | ℹ️ Not found in chat: Price, Address | 对话里找不到这几项，日历上空着 | 需要的话在对话里补问，再发 `Booking updated` |
 | ⚠️ Overlaps with: … | 同一时段日历里已有别的事件 | 确认是不是撞单了 |
-| 🔄 Booking rescheduled / updated | 已修改，会写“was …”原本的时间 | 无 |
+| 🔄 Booking rescheduled / updated | 已修改，会写”was …”原本的时间 | 无 |
 | ❌ Booking cancelled | 已从日历删除 | 无 |
 | ℹ️ Already in calendar | 这位客人同一时间已经有预约，没有重复建立 | 想改资料请用 `Booking updated` |
 | ℹ️ This customer has other upcoming bookings | 这位客人还有别的预约 | 确认改到或取消的是对的那一个 |
@@ -185,7 +209,9 @@ AI 会自己看懂对话里的时间。下面的规则适用于你**自己写的
 | ⚠️ Booking not found | 找不到这位客人的预约 | 检查是不是发错对话；不然手动改日历 |
 | 💬 客人名字 | 客人发来消息（开启了 FORWARD_INCOMING 才有） | 回复客人 |
 
-点通知会打开客人卡片，见下一节。
+**点 📅 Booking added / 🔄 Booking updated 通知**会自动执行 Shortcut，把这个预约的时间（格式：`24/10 Saturday 10am`）复制到剪贴板，方便贴到标签。
+
+点其他通知会打开客人卡片，见下一节。
 
 ## 回到客人的对话
 
