@@ -1140,7 +1140,7 @@ function buildTimes(date, start, end, defaultMs) {
   }
   return {
     start: naive(startMs), end: naive(endMs),
-    label: `${d}/${m} ${WD_SHORT[dowOf(date)]} ${start.h % 12 || 12}${start.min ? `:${pad(start.min)}` : ''}${start.h < 12 ? 'am' : 'pm'}`,
+    label: `${d}/${m} ${WD_LONG[dowOf(date)]} ${start.h % 12 || 12}${start.min ? `:${pad(start.min)}` : ''}${start.h < 12 ? 'am' : 'pm'}`,
   };
 }
 
