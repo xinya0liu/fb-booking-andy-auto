@@ -896,7 +896,7 @@ async function printPage(env, origin) {
   td.addr { max-width: 180px; word-break: break-word; }
   td.veh  { max-width: 140px; word-break: break-word; }
   .empty { color: #888; font-style: italic; }
-  .src { color: #888; font-size: 0.8em; text-align: center; white-space: nowrap; width: 40px; }
+  .src { color: #111; font-size: 0.8em; text-align: center; white-space: nowrap; width: 40px; }
   @media print { tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
   @media print {
     @page { size: A4 landscape; margin: 15mm; }
