@@ -101,13 +101,13 @@ export default {
       const cfg = config(env);
       const contentType = (req.headers.get('content-type') || '').split(';')[0].trim();
       const errHandler = e => { console.error('sms-booking error', e); return bark(env, '⚠️ SMS booking failed', e.message, ''); };
-      if (contentType.startsWith('image/')) {
+      if (contentType.startsWith('image/') || contentType === 'application/octet-stream') {
         const buf = await req.arrayBuffer();
-        ctx.waitUntil(doSmsBookingFromImage(buf, contentType, env, cfg).catch(errHandler));
+        ctx.waitUntil(doSmsBookingFromImage(buf, sniffMediaType(buf), env, cfg).catch(errHandler));
       } else if (contentType === 'application/json') {
         const j = await req.json();
         const buf = Uint8Array.from(atob(j.image), c => c.charCodeAt(0)).buffer;
-        ctx.waitUntil(doSmsBookingFromImage(buf, j.type || 'image/jpeg', env, cfg).catch(errHandler));
+        ctx.waitUntil(doSmsBookingFromImage(buf, sniffMediaType(buf), env, cfg).catch(errHandler));
       } else {
         const text = await req.text();
         ctx.waitUntil(doSmsBooking(text, env, cfg).catch(errHandler));
@@ -324,9 +324,18 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
+function sniffMediaType(buf) {
+  const b = new Uint8Array(buf, 0, 12);
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'image/png';
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return 'image/jpeg';
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'image/gif';
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+      b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  return 'image/jpeg';
+}
+
 async function aiFromScreenshot(base64, mediaType, cfg, env) {
   const t = todayInTz(cfg.tz);
-  const safeType = ['image/jpeg','image/png','image/gif','image/webp'].includes(mediaType) ? mediaType : 'image/jpeg';
   const prompt =
 `Today is ${WD_LONG[dowOf(t)]} ${t.y}-${pad(t.m)}-${pad(t.d)}, time zone ${cfg.tz}.
 This is a screenshot of an SMS conversation. The business owner runs a mobile car air-conditioning service.
@@ -373,7 +382,7 @@ Rules:
         tools: [tool],
         tool_choice: { type: 'tool', name: 'save_booking' },
         messages: [{ role: 'user', content: [
-          { type: 'image', source: { type: 'base64', media_type: safeType, data: base64 } },
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
           { type: 'text', text: prompt },
         ]}],
       }),
