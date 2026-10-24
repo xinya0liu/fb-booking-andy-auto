@@ -227,7 +227,7 @@ async function doConfirm(ctx) {
 
   const body = [t.label, f.service, f.price].filter(Boolean).join(' · ') + (w.warning ? `\n${w.warning}` : '') +
     overlapLine(created.overlaps) + (fallback ? `\n${fallback}` : '');
-  await bark(env, `📅 Booking added: ${name}`, body, link);
+  await bark(env, `📅 Booking added: ${name}`, body, barkTimeLink(t.label, env), t.label);
 }
 
 // 写入新预约。已经有同一时间的预约、或 Meta 重复推送时返回 false
@@ -339,7 +339,7 @@ async function doConfirmFromChat(ctx, f) {
   if (!sent) lines.push('ℹ️ Auto-reply is off, nothing was sent to the customer.');
   else if (sent.ok) lines.push('✉️ Confirmation sent to the customer.');
   else lines.push('', `⚠️ Confirmation NOT sent to the customer (${sent.error}). Please send it yourself:`, '', msg);
-  await bark(env, `📅 Booking added: ${name}`, lines.join('\n'), link);
+  await bark(env, `📅 Booking added: ${name}`, lines.join('\n'), barkTimeLink(t.label, env), t.label);
 }
 
 // 读取对话：最近 30 天、最多 50 条，按时间先后
@@ -547,7 +547,8 @@ async function doUpdate(ctx) {
   if (!list.length) return notFound(env, name, link, null);
   const r = await applyUpdate(ctx, list[0], fields);
   if (fallback) r.lines.push(fallback);
-  await bark(env, r.title, r.lines.join('\n') + moreBookings(list), link);
+  const copyTime = (r.t || r.old)?.label || '';
+  await bark(env, r.title, r.lines.join('\n') + moreBookings(list), barkTimeLink(copyTime, ctx.env), copyTime);
 }
 
 // 把 "标签: 内容" 的行套用到预约上，返回 Bark 要显示的内容
@@ -699,7 +700,8 @@ async function doUpdateFromChat(ctx) {
   if (!sent) lines.push('ℹ️ Auto-reply is off, nothing was sent to the customer.');
   else if (sent.ok) lines.push('✉️ Updated details sent to the customer.');
   else lines.push('', `⚠️ Updated details NOT sent to the customer (${sent.error}). Please send it yourself:`, '', msg);
-  await bark(env, r.title, lines.join('\n') + moreBookings(list), link);
+  const copyTime2 = (r.t || r.old)?.label || '';
+  await bark(env, r.title, lines.join('\n') + moreBookings(list), barkTimeLink(copyTime2, ctx.env), copyTime2);
 }
 
 function moreBookings(list) {
@@ -1138,7 +1140,7 @@ function buildTimes(date, start, end, defaultMs) {
   }
   return {
     start: naive(startMs), end: naive(endMs),
-    label: `${WD_SHORT[dowOf(date)]} ${d}/${m} ${pad(start.h)}:${pad(start.min)}`,
+    label: `${WD_SHORT[dowOf(date)]} ${d}/${m} ${start.h % 12 || 12}${start.min ? `:${pad(start.min)}` : ''}${start.h < 12 ? 'am' : 'pm'}`,
   };
 }
 
@@ -1524,6 +1526,11 @@ function cardLink(origin, name, env = {}) {
   return `${origin}/c?n=${encodeURIComponent(name)}`;
 }
 
+function barkTimeLink(timeLabel, env = {}) {
+  if (!timeLabel || !env.SHORTCUT_NAME) return '';
+  return `shortcuts://run-shortcut?name=${encodeURIComponent(env.SHORTCUT_NAME)}&input=text&text=${encodeURIComponent(timeLabel)}`;
+}
+
 function customerCard(name, env) {
   const inbox = env.INBOX_URL || 'https://business.facebook.com/latest/inbox/all';
   const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -1567,12 +1574,13 @@ function customerCard(name, env) {
 }
 
 // BARK_URL 可以放多个网址，用逗号隔开
-async function bark(env, title, body, link) {
+async function bark(env, title, body, link, copy) {
   const urls = (env.BARK_URL || '').split(/[,\s]+/).map(u => u.trim().replace(/\/+$/, '')).filter(Boolean);
   if (!urls.length) return;
   const path = `/${encodeURIComponent(title)}/${encodeURIComponent(String(body || ' ').slice(0, 1500))}`;
   let query = `?group=${encodeURIComponent(env.BARK_GROUP || 'Bookings')}`;
   if (link) query += `&url=${encodeURIComponent(link)}`;
+  if (copy) query += `&copy=${encodeURIComponent(copy)}`;
   await Promise.all(urls.map(u => fetch(u + path + query).catch(e => console.error('bark', e))));
 }
 
