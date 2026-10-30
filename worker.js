@@ -155,7 +155,7 @@ export default {
       }
       const cfg = config(env);
       ctx.waitUntil(
-        doSmsBooking(conversation, env, cfg)
+        doSmsBooking(conversation, env, cfg, phone)
           .catch(e => { console.error('imessage-result error', e); return bark(env, '⚠️ iMessage booking failed', e.message, ''); })
       );
       return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type': 'application/json' } });
@@ -299,9 +299,10 @@ async function doConfirm(ctx) {
 
 // ================= SMS / 电话预约 =================
 
-async function doSmsBooking(conversationText, env, cfg) {
+async function doSmsBooking(conversationText, env, cfg, phone = '') {
   if (!conversationText.trim()) throw new Error('Empty conversation.');
   const ai = await aiFromSmsChat(conversationText, cfg, env);
+  if (phone && !ai.mobile) ai.mobile = phone;
   await saveSmsFromAi(ai, env, cfg);
 }
 
