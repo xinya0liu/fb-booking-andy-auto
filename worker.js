@@ -160,6 +160,25 @@ export default {
       );
       return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type': 'application/json' } });
     }
+
+    if (url.pathname === '/imessage-keyword' &&
+        url.searchParams.get('secret') === imsecret) {
+      if (req.method !== 'POST') return new Response('method', { status: 405 });
+      const j = await req.json().catch(() => ({}));
+      const conversation = (j.conversation || '').trim();
+      const phone = (j.phone || '').trim();
+      const action = (j.action || 'confirm').toLowerCase();
+      if (!conversation) return new Response(JSON.stringify({ error: 'no conversation' }), { status: 400, headers: { 'content-type': 'application/json' } });
+      const cfg = config(env);
+      try {
+        const reply = await doKeywordBooking(conversation, phone, action, env, cfg);
+        return new Response(JSON.stringify({ ok: true, reply }), { headers: { 'content-type': 'application/json' } });
+      } catch (e) {
+        console.error('imessage-keyword error', e);
+        await bark(env, `⚠️ iMessage keyword failed`, e.message, '');
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { 'content-type': 'application/json' } });
+      }
+    }
     // ---------------------------------------------------------------
 
     // Meta webhook 验证
@@ -298,6 +317,17 @@ async function doConfirm(ctx) {
 }
 
 // ================= SMS / 电话预约 =================
+
+async function doKeywordBooking(conversationText, phone, action, env, cfg) {
+  const ai = await aiFromSmsChat(conversationText, cfg, env);
+  if (phone && !ai.mobile) ai.mobile = phone;
+  if (action === 'confirm') {
+    await saveSmsFromAi(ai, env, cfg);
+    const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
+    return customerMessage(ai, t, env, `Hi ${ai.name || 'there'}! Your booking is confirmed:`);
+  }
+  throw new Error(`Action "${action}" not yet supported via iMessage keyword`);
+}
 
 async function doSmsBooking(conversationText, env, cfg, phone = '') {
   if (!conversationText.trim()) throw new Error('Empty conversation.');
