@@ -1,13 +1,13 @@
 # fb-booking-andy-auto
 
-Andy Auto AC Regas 的预约自动化。在 Facebook Messenger 回复客人时，用固定的开头（例如 `Booking confirmed`），系统就会：
+Andy Auto AC Regas 的预约自动化。在 **Facebook Messenger** 或 **iMessage（短信）** 里回复客人时，用固定的关键词（例如 `Booking confirmed`），系统就会：
 
 - 读取这段对话，用 AI 整理出时间、服务、价格、地址、电话、车型；
 - 写入、修改或删除 **iCloud（苹果）日历**里的预约；
 - 自动把完整的预约资料发给客人；
 - 用 **Bark** 推送结果给两位管理员（成功、失败、撞时间都会通知）。
 
-整个系统只有一个 Cloudflare Worker（`worker.js`），不需要服务器。
+FB 部分只有一个 Cloudflare Worker（`worker.js`），不需要服务器。iMessage 部分另需 Andy Mac 上的 `server.py` 常驻服务。
 
 ## 它解决什么问题
 
@@ -29,6 +29,8 @@ Andy Auto AC Regas 的预约自动化。在 Facebook Messenger 回复客人时�
 
 ## 运作方式
 
+### Facebook Messenger
+
 ```
 你在 Business Suite 回复客人（开头是上面五个之一）
             │
@@ -49,6 +51,26 @@ iPhone 日历几乎马上更新；点通知或事件里的链接，打开客人�
 每早 10 点（Brisbane）→ 自动给 FB 预约客人发送提醒消息
 ```
 
+### iMessage（短信）
+
+```
+Andy 在 iMessage 对话里发 “Booking confirmed”
+            │
+            ▼
+Andy Mac 上的 server.py（launchd 后台常驻）
+  ├─ 每 5 秒扫描 chat.db，检测 Andy 发出的关键词
+  ├─ 读取整段对话，POST 到 Cloudflare Worker /imessage-keyword
+            │
+            ▼
+Cloudflare Worker
+  ├─ AI 提取预约资料 → 写入 iCloud 日历
+  ├─ 生成确认消息返回 Mac
+            │
+            ▼
+Mac 的 server.py 用 AppleScript 自动发 iMessage 给客人
+  + Bark 通知 Andy
+```
+
 ## 文件说明
 
 | 文件 | 内容 |
@@ -56,6 +78,7 @@ iPhone 日历几乎马上更新；点通知或事件里的链接，打开客人�
 | `worker.js` | 全部程序代码（Cloudflare Worker） |
 | `wrangler.jsonc` | Cloudflare 部署设置。`keep_vars: true` 让部署时保留后台填的变量，**不要删掉** |
 | `tests/mock-icloud-test.mjs` | 本地测试：用模拟的 iCloud、Facebook、AI 跑完整流程，不需要任何密码 |
+| `/Users/shared/server.py` | Andy Mac 上的 iMessage 常驻服务（不在 git 里，放在共享目录供跨账户复制） |
 | [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | 使用说明：五个开头、常用句子、时间写法、通知的意思、常见问题 |
 | [`docs/SETUP.md`](docs/SETUP.md) | 从零开始的完整设置步骤 |
 | [`docs/MAINTENANCE.md`](docs/MAINTENANCE.md) | 日常维护、故障排查、更换密码、修改代码、回滚、费用 |

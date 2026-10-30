@@ -321,11 +321,11 @@ async function doConfirm(ctx) {
 async function doKeywordBooking(conversationText, phone, action, env, cfg) {
   const ai = await aiFromSmsChat(conversationText, cfg, env);
   if (phone && !ai.mobile) ai.mobile = phone;
-  if (action === 'confirm') {
+  if (action === 'confirmed' || action === 'confirm') {
     await saveSmsFromAi(ai, env, cfg);
     const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
-    const { y, m, d } = t.date;
-    const { h, min } = t.start;
+    const { y, m, d } = ai.date;
+    const { h, min } = ai.start;
     const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
     const when = `${WD_LONG[dowOf({ y, m, d })]} ${d}/${m}, ${clock}`;
     const lines = [];
@@ -337,8 +337,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg) {
     lines.push('See you then!');
     return lines.join('\n');
   }
-  if (action === 'cancel') {
-    // 取消：复用 FB 的 doCancel 逻辑（待实现）
+  if (action === 'cancelled' || action === 'cancel') {
     throw new Error('Booking cancelled — calendar cancellation via iMessage not yet implemented');
   }
   throw new Error(`Action "${action}" not yet supported via iMessage keyword`);

@@ -2,6 +2,10 @@
 
 给专页管理员看的。
 
+## 两种触发方式
+
+系统支持两种渠道：**Facebook Messenger** 和 **iMessage（短信）**，关键词相同。
+
 ## 只要记住这两件事
 
 1. **消息的开头决定会发生什么。** 只有下面五个开头会触发，其他任何消息都不会。
@@ -229,6 +233,36 @@ iPhone 上的 Business Suite 不支持“直接打开某一个对话”的链接
 客人的电话在日历事件的备注里，点一下就能直接打。
 
 改成客人卡片之前建立的事件，链接还是旧的写法，会打开最新的对话，不一定是那位客人。
+
+## iMessage（短信）触发
+
+Andy 在 iPhone iMessage 短信对话里直接发关键词，Mac 后台服务会自动处理。
+
+| Andy 发的消息 | 系统动作 |
+|---|---|
+| `Booking confirmed` | AI 读对话 → 建日历 → 自动回复客人确认详情 |
+| `Booking updated` | 待实现 |
+| `Booking cancelled` | 待实现 |
+
+**与 FB 的区别：**
+- 不需要 Facebook，直接在 iMessage 里发
+- 关键词大小写无关，后面加文字也可以（例如 `Booking confirmed, see you Friday`）
+- 自动回复格式（发给客人的消息）：
+  ```
+  Service: AC Regas
+  Price: $179
+  Time: Friday 30/10, 11:00pm
+  Address: 55 Molly Court, Eagleby
+  Vehicle: Audi A3
+  See you then!
+  ```
+- 需要 Andy Mac 保持开机且插电（launchd 后台服务一直跑）
+
+**Mac 必须满足的条件（只需设置一次）：**
+- Andy 账号登录过 iMessage
+- Terminal 有 Full Disk Access（读 chat.db）
+- `/usr/bin/python3` 有 Full Disk Access（launchd 进程读 chat.db）
+- Terminal 有 Automation → Messages 权限（发 iMessage）
 
 ## 常见问题
 
