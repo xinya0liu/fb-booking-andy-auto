@@ -334,6 +334,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg) {
     lines.push(`Time: ${when}`);
     if (ai.address) lines.push(`Address: ${ai.address}`);
     if (ai.vehicle) lines.push(`Vehicle: ${ai.vehicle}`);
+    lines.push('See you then!');
     return lines.join('\n');
   }
   if (action === 'cancel') {
