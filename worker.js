@@ -149,7 +149,10 @@ export default {
       const j = await req.json().catch(() => ({}));
       const conversation = (j.conversation || '').trim();
       const phone = (j.phone || '').trim();
-      if (!conversation) return new Response(JSON.stringify({ error: 'no conversation' }), { status: 400, headers: { 'content-type': 'application/json' } });
+      if (!conversation) {
+        ctx.waitUntil(bark(env, `ℹ️ No iMessages found`, `Phone: ${phone}\nNo iMessage history on this Mac for this number.`, ''));
+        return new Response(JSON.stringify({ ok: true, warning: 'empty conversation' }), { headers: { 'content-type': 'application/json' } });
+      }
       const cfg = config(env);
       ctx.waitUntil(
         doSmsBooking(conversation, env, cfg)
