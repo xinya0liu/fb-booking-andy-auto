@@ -43,7 +43,12 @@
  *                        复制客人名字并打开 Business Suite；没设就打开客人卡片网页
  *   INBOX_URL            客人卡片“打开收件箱”按钮的网址，默认 Business Suite 收件箱
  *   FORWARD_INCOMING     "true" = 客人发来的消息也推 Bark
- *   BARK_GROUP           Bark 分组，默认 "Bookings"
+ *   BARK_GROUP           预约通知的 Bark 分组，默认 "Bookings"
+  BARK_GROUP_CUSTOMER  客人来消息的 Bark 分组，默认 "Customers"
+  BARK_SOUND_BOOKING   预约通知（新增/更新/取消）的铃声名，不设则用 Bark 默认声音
+                       客人来消息的通知永远用 Bark 默认声音（不受此变量影响）
+                       铃声名可在 Bark App → 设置 → 通知铃声 里查看，例如：
+                       calypso / minuet / chime / bell / glass / telegraph / update
  *   DEFAULT_MINUTES      没写结束时间时的时长，默认 90
  *   TIMEZONE             默认 "Australia/Brisbane"
  *   GRAPH_VERSION        默认 "v23.0"
@@ -92,7 +97,7 @@ export default {
     // 打印页：明天的预约工单
     if (req.method === 'GET' && url.pathname === '/print' &&
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
-      return printPage(env, url.origin);
+      return printPage(env, url.origin, url.searchParams.get('date') || '');
     }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
@@ -114,6 +119,45 @@ export default {
       }
       return new Response('ok');
     }
+
+    // iMessage 轮询三件套 ----------------------------------------
+    // /imessage-task  (POST)  iPhone Shortcut 提交电话号码
+    // /imessage-poll  (GET)   Mac 每 5 秒问有没有任务
+    // /imessage-result (POST) Mac 把读到的对话发回来
+    const imsecret = env.VERIFY_TOKEN || '';
+    if (url.pathname === '/imessage-task' &&
+        url.searchParams.get('secret') === imsecret) {
+      if (req.method !== 'POST') return new Response('method', { status: 405 });
+      const j = await req.json().catch(() => ({}));
+      const phone = (j.phone || '').trim();
+      if (!phone) return new Response(JSON.stringify({ error: 'no phone' }), { status: 400, headers: { 'content-type': 'application/json' } });
+      await env.BARK_COOLDOWN.put('imsg-task', phone, { expirationTtl: 300 });
+      return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type': 'application/json' } });
+    }
+
+    if (url.pathname === '/imessage-poll' &&
+        url.searchParams.get('secret') === imsecret) {
+      if (req.method !== 'GET') return new Response('method', { status: 405 });
+      const phone = await env.BARK_COOLDOWN.get('imsg-task');
+      if (phone) await env.BARK_COOLDOWN.delete('imsg-task');
+      return new Response(JSON.stringify({ phone: phone || null }), { headers: { 'content-type': 'application/json' } });
+    }
+
+    if (url.pathname === '/imessage-result' &&
+        url.searchParams.get('secret') === imsecret) {
+      if (req.method !== 'POST') return new Response('method', { status: 405 });
+      const j = await req.json().catch(() => ({}));
+      const conversation = (j.conversation || '').trim();
+      const phone = (j.phone || '').trim();
+      if (!conversation) return new Response(JSON.stringify({ error: 'no conversation' }), { status: 400, headers: { 'content-type': 'application/json' } });
+      const cfg = config(env);
+      ctx.waitUntil(
+        doSmsBooking(conversation, env, cfg)
+          .catch(e => { console.error('imessage-result error', e); return bark(env, '⚠️ iMessage booking failed', e.message, ''); })
+      );
+      return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type': 'application/json' } });
+    }
+    // ---------------------------------------------------------------
 
     // Meta webhook 验证
     if (req.method === 'GET') {
@@ -206,7 +250,7 @@ async function onPageMessage(ev, env, origin) {
   } catch (e) {
     console.error(e);
     const title = { confirm: '⚠️ Booking not saved', update: '⚠️ Booking not updated', cancel: '⚠️ Booking not cancelled' }[action];
-    await bark(env, `${title}: ${ctx.name}`, `${e.message}\n\n${text}`, ctx.link);
+    await barkBooking(env, `${title}: ${ctx.name}`, `${e.message}\n\n${text}`, ctx.link);
   }
 }
 
@@ -247,7 +291,7 @@ async function doConfirm(ctx) {
 
   const body = [t.label, f.service, f.price].filter(Boolean).join(' · ') + (w.warning ? `\n${w.warning}` : '') +
     overlapLine(created.overlaps) + (fallback ? `\n${fallback}` : '');
-  await bark(env, `📅 Booking added: ${name}`, body, barkTimeLink(t.label, env), t.label);
+  await barkBooking(env, `📅 Booking added: ${name}`, body, barkTimeLink(t.label, env), t.label);
 }
 
 // ================= SMS / 电话预约 =================
@@ -300,7 +344,7 @@ async function saveSmsFromAi(ai, env, cfg) {
     await dav(env, 'PUT', `${cal}${id}.ics`, { body: ics, headers: { 'if-none-match': '*' } });
   } catch (e) {
     if (e.status === 412) {
-      await bark(env, `ℹ️ Already in calendar: ${name}`, t.label, link);
+      await barkBooking(env, `ℹ️ Already in calendar: ${name}`, t.label, link);
       return;
     }
     throw e;
@@ -311,7 +355,7 @@ async function saveSmsFromAi(ai, env, cfg) {
     ai.address, ai.mobile && `📱 ${ai.mobile}`, ai.vehicle && `🚗 ${ai.vehicle}`, ai.notes && `📝 ${ai.notes}`,
   ].filter(Boolean);
   if (overlaps.length) lines.push(overlapLine(overlaps).trim());
-  await bark(env, `📅 SMS Booking added: ${name}`, lines.join('\n'), barkTimeLink(t.label, env), t.label);
+  await barkBooking(env, `📅 SMS Booking added: ${name}`, lines.join('\n'), barkTimeLink(t.label, env), t.label);
 }
 
 function arrayBufferToBase64(buffer) {
@@ -347,7 +391,7 @@ Rules:
 - The business owner's phone number is 0478 701 289. Never use it as the customer's mobile.
 - The customer's name is usually shown at the top of the screen as the conversation header.
 - Leave a field as "" if not mentioned. Do not guess or invent anything.
-- notes: only things the technician should know. Keep it short, or "".`;
+- notes: only info the technician needs on-site that is NOT captured in other fields — e.g. gate code, parking instructions, specific symptom, part needed. IMPORTANT EXCEPTION: if the customer is coming to Andy's location (not a mobile visit to the customer), always write "Customer coming to us". Do NOT include: customer name, service breakdown, price reasoning, "mobile service at home", "time customer accepted", or any AI reasoning. Leave "" if nothing genuinely useful.`;
 
   const str = d => ({ type: 'string', description: d });
   const tool = {
@@ -360,12 +404,12 @@ Rules:
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
         end: str('HH:MM in 24-hour time, or "" if not mentioned'),
-        service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test"'),
-        price: str('e.g. $150'),
-        address: str('Service address'),
+        service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test". No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        address: str('Service address only — street and suburb. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number"),
-        vehicle: str('e.g. 2016 Toyota Camry'),
-        notes: str('Short notes for the technician'),
+        vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
       },
       required: ['name', 'date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'notes'],
     },
@@ -421,7 +465,7 @@ Rules:
 - The business's own phone number is 0478 701 289. Never use it as the customer's mobile.
 - For the customer's name: use whatever name appears in the conversation, or "" if unknown.
 - Leave a field as "" if not mentioned. Do not guess or invent anything.
-- notes: only things the technician should know. Keep it short, or "".
+- notes: only info the technician needs on-site that is NOT captured in other fields — e.g. gate code, parking instructions, specific symptom, part needed. IMPORTANT EXCEPTION: if the customer is coming to Andy's location (not a mobile visit to the customer), always write "Customer coming to us". Do NOT include: customer name, service breakdown, price reasoning, "mobile service at home", "time customer accepted", or any AI reasoning. Leave "" if nothing genuinely useful.
 
 Conversation:
 ${conversationText}`;
@@ -437,12 +481,12 @@ ${conversationText}`;
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
         end: str('HH:MM in 24-hour time, or "" if not mentioned'),
-        service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test"'),
-        price: str('e.g. $150'),
-        address: str('Service address'),
+        service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test". No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        address: str('Service address only — street and suburb. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number"),
-        vehicle: str('e.g. 2016 Toyota Camry'),
-        notes: str('Short notes for the technician'),
+        vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
       },
       required: ['name', 'date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'notes'],
     },
@@ -491,7 +535,7 @@ async function saveNewBooking({ env, cfg, psid, mid, name, link }, { t, service,
   const existing = await findBookings(env, cfg, psid);
   const same = existing.find(e => sameLocalStart(e, t, cfg.tz));
   if (same) {
-    if (same.uid !== uid) await bark(env, `ℹ️ Already in calendar: ${name}`, t.label, link);
+    if (same.uid !== uid) await barkBooking(env, `ℹ️ Already in calendar: ${name}`, t.label, link);
     return false;
   }
 
@@ -549,6 +593,17 @@ async function doConfirmFromChat(ctx, f) {
   const d = {};
   for (const [k, label] of CHAT_FIELDS) d[k] = typed[label.toLowerCase()] || ai[k] || '';
 
+  // 地址兜底：AI 拿不到时查这个客人的历史预约
+  let usedPreviousAddress = false;
+  if (!d.address) {
+    const prevBookings = await findAllBookings(env, cfg, psid);
+    const prevWithAddr = prevBookings.find(e => e.location && e.startMs < Date.now());
+    if (prevWithAddr) {
+      d.address = prevWithAddr.location;
+      usedPreviousAddress = true;
+    }
+  }
+
   let w;
   if (typed.time) {
     w = parseWhenParts(typed.time, cfg);
@@ -576,11 +631,28 @@ async function doConfirmFromChat(ctx, f) {
   applyCustomLabel(psid, d.service, w.date, env);
 
   // 自动回复客人
+  const noAddress = !d.address;
   const msg = customerMessage(d, w, env, env.CONFIRM_HEADER || 'Andy Auto AC Regas');
   let sent = null;
-  if (env.AUTO_REPLY !== 'false') sent = await sendToCustomer(psid, msg, env);
+  if (!noAddress && env.AUTO_REPLY !== 'false') sent = await sendToCustomer(psid, msg, env);
 
-  const missing = ['service', 'price', 'address'].filter(k => !d[k]).map(k => CHAT_FIELDS.find(x => x[0] === k)[1]);
+  if (noAddress) {
+    const template = customerMessage({ ...d, address: '[fill in]' }, w, env, env.CONFIRM_HEADER || 'Andy Auto AC Regas');
+    const barkLines = [
+      '⚠️ No address — confirmation NOT sent to customer.',
+      '📅 Calendar added.',
+      'Get the address, then send this manually:',
+      '',
+      '---',
+      template,
+    ];
+    if (w.warning) barkLines.push(w.warning);
+    if (created.overlaps.length) barkLines.push(overlapLine(created.overlaps).trim());
+    await barkBooking(env, `📅 Booking added: ${name}`, barkLines.join('\n'), barkTimeLink(t.label, env), t.label);
+    return;
+  }
+
+  const missing = ['service', 'price'].filter(k => !d[k]).map(k => CHAT_FIELDS.find(x => x[0] === k)[1]);
   const lines = [
     [t.label, d.service, d.price].filter(Boolean).join(' · '),
     d.address, d.mobile && `📱 ${d.mobile}`, d.vehicle && `🚗 ${d.vehicle}`, d.notes && `📝 ${d.notes}`,
@@ -591,7 +663,8 @@ async function doConfirmFromChat(ctx, f) {
   if (!sent) lines.push('ℹ️ Auto-reply is off, nothing was sent to the customer.');
   else if (sent.ok) lines.push('✉️ Confirmation sent to the customer.');
   else lines.push('', `⚠️ Confirmation NOT sent to the customer (${sent.error}). Please send it yourself:`, '', msg);
-  await bark(env, `📅 Booking added: ${name}`, lines.join('\n'), barkTimeLink(t.label, env), t.label);
+  const barkTitle = usedPreviousAddress ? `📅 Booking added: ${name} ⚠️ Verify address` : `📅 Booking added: ${name}`;
+  await barkBooking(env, barkTitle, lines.join('\n'), barkTimeLink(t.label, env), t.label);
 }
 
 // 读取对话：最近 30 天、最多 50 条，按时间先后
@@ -616,9 +689,9 @@ async function readConversationRaw(psid, env, cfg) {
   const c = await (await fetch(`${graph}/me/conversations?platform=messenger&user_id=${psid}&fields=id&${token}`)).json();
   const id = c.data?.[0]?.id;
   if (!id) throw serviceError(`Facebook: couldn't find this conversation. ${JSON.stringify(c.error || c).slice(0, 200)}`);
-  const m = await (await fetch(`${graph}/${id}/messages?fields=message,from,created_time&limit=50&${token}`)).json();
+  const m = await (await fetch(`${graph}/${id}/messages?fields=message,from,created_time&limit=100&${token}`)).json();
   if (m.error || !m.data) throw serviceError(`Facebook: couldn't read the messages. ${JSON.stringify(m.error || m).slice(0, 200)}`);
-  const since = Date.now() - 30 * 864e5;
+  const since = Date.now() - 90 * 864e5;
   const list = m.data
     .filter(x => x.message && Date.parse(x.created_time) >= since)
     .reverse()
@@ -650,7 +723,7 @@ Rules:
 - Use the final agreed values, e.g. the last price quoted by Us, not an earlier estimate, and the time the customer finally accepted, not other options offered.
 - The business's own phone number appears in messages from Us. Never use it as the customer's mobile.
 - Leave a field as "" if it was not mentioned. Do not guess or invent anything.
-- notes: only things the technician should know (e.g. symptoms, parts needed, parking). Keep it short, or "".
+- notes: only info the technician needs on-site that is NOT captured in other fields — e.g. gate code, parking instructions, specific symptom, part needed. IMPORTANT EXCEPTION: if the customer is coming to Andy's location (not a mobile visit to the customer), always write "Customer coming to us". Do NOT include: customer name, service breakdown, price reasoning, "mobile service at home", "time customer accepted", or any AI reasoning. Leave "" if nothing genuinely useful.
 
 Chat (oldest first):
 ${transcript}`;
@@ -665,12 +738,12 @@ ${transcript}`;
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
         end: str('HH:MM in 24-hour time, or "" if not mentioned'),
-        service: str('Service type in 1-3 words based on what was discussed, e.g. "Regas", "Pressure Test", "Leak Check". Keep it short and specific.'),
-        price: str('e.g. $150'),
-        address: str('Service address'),
+        service: str('Service type in 1-3 words based on what was discussed, e.g. "Regas", "Pressure Test", "Leak Check". Keep it short and specific. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        address: str('Service address only — street and suburb. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number"),
-        vehicle: str('e.g. 2016 Toyota Camry'),
-        notes: str('Short notes for the technician'),
+        vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
       },
       required: ['date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'notes'],
     },
@@ -800,7 +873,7 @@ async function doUpdate(ctx) {
   const r = await applyUpdate(ctx, list[0], fields);
   if (fallback) r.lines.push(fallback);
   const copyTime = (r.t || r.old)?.label || '';
-  await bark(env, r.title, r.lines.join('\n') + moreBookings(list), barkTimeLink(copyTime, ctx.env), copyTime);
+  await barkBooking(env, r.title, r.lines.join('\n') + moreBookings(list), barkTimeLink(copyTime, ctx.env), copyTime);
 }
 
 // 把 "标签: 内容" 的行套用到预约上，返回 Bark 要显示的内容
@@ -935,16 +1008,26 @@ async function doUpdateFromChat(ctx) {
 
   const r = await applyUpdate(ctx, target, fields, { future: true });
 
-  // 自动回复客人更新后的完整资料
-  const d = { ...cur };
-  for (const l of fields) {
-    const k = fieldLabel(l).toLowerCase();
-    if (k !== 'time') d[k] = l.slice(l.search(/[:：]/) + 1).trim();
-  }
+  // 自动回复客人：只显示改动了的栏位
   const when = r.t
     ? { date: r.w.date, start: r.w.start }
     : { date: { y: old.y, m: old.m, d: old.d }, start: { h: old.h, min: old.min } };
-  const msg = customerMessage(d, when, env, env.UPDATE_HEADER || 'Andy Auto AC Regas – Updated');
+  const updateLines = [];
+  for (const l of fields) {
+    const k = fieldLabel(l).toLowerCase();
+    if (k === 'time') {
+      const { y, m, d: day } = when.date;
+      const { h, min } = when.start;
+      const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
+      updateLines.push(`Time updated: ${WD_LONG[dowOf({ y, m, d: day })]} ${day}/${m}, ${clock}`);
+    } else {
+      const label = fieldLabel(l);
+      const val = l.slice(l.search(/[:：]/) + 1).trim();
+      updateLines.push(`${label} updated: ${val}`);
+    }
+  }
+  updateLines.push('', env.CONFIRM_FOOTER_UPDATE || 'Any changes, reply here or call Andy on 0478 701 289.');
+  const msg = updateLines.join('\n');
   let sent = null;
   if (env.AUTO_REPLY !== 'false') sent = await sendToCustomer(psid, msg, env);
 
@@ -953,7 +1036,7 @@ async function doUpdateFromChat(ctx) {
   else if (sent.ok) lines.push('✉️ Updated details sent to the customer.');
   else lines.push('', `⚠️ Updated details NOT sent to the customer (${sent.error}). Please send it yourself:`, '', msg);
   const copyTime2 = (r.t || r.old)?.label || '';
-  await bark(env, r.title, lines.join('\n') + moreBookings(list), barkTimeLink(copyTime2, ctx.env), copyTime2);
+  await barkBooking(env, r.title, lines.join('\n') + moreBookings(list), barkTimeLink(copyTime2, ctx.env), copyTime2);
 }
 
 function moreBookings(list) {
@@ -990,12 +1073,12 @@ async function doCancel({ env, cfg, psid, text, name, link }) {
   }
 
   const more = list.length > 1 ? '\nℹ️ This customer has other upcoming bookings.' : '';
-  await bark(env, `❌ Booking cancelled: ${name}`, [p.label, target.service].filter(Boolean).join(' · ') + more, link);
+  await barkBooking(env, `❌ Booking cancelled: ${name}`, [p.label, target.service].filter(Boolean).join(' · ') + more, link);
 }
 
 async function notFound(env, name, link, hint) {
   const when = hint ? ` on ${WD_SHORT[dowOf(hint)]} ${hint.d}/${hint.m}` : '';
-  await bark(env, `⚠️ Booking not found: ${name}`,
+  await barkBooking(env, `⚠️ Booking not found: ${name}`,
     `No upcoming booking${when} for this customer. Please update the calendar manually.`, link);
 }
 
@@ -1018,7 +1101,7 @@ async function handleScheduled(cron, env) {
   const bookings = await findTomorrowBookings(env, cfg);
   console.log('[scheduled] bookings found:', bookings.length);
   if (!bookings.length) {
-    await bark(env, '📅 Tomorrow: No bookings', '', '');
+    await barkBooking(env, '📅 Tomorrow: No bookings', '', '');
     return;
   }
 
@@ -1047,38 +1130,52 @@ async function handleScheduled(cron, env) {
   });
   const workerUrl = env.WORKER_URL || 'https://fb-booking-andy-auto.susanna0liu.workers.dev';
   const printUrl = `${workerUrl}/print?secret=${encodeURIComponent(env.VERIFY_TOKEN || '')}`;
-  await bark(env, `📅 Tomorrow: ${bookings.length} APPOINTMENT${bookings.length > 1 ? 'S' : ''}`, blocks.join('\n───\n'), printUrl);
+  await barkBooking(env, `📅 Tomorrow: ${bookings.length} APPOINTMENT${bookings.length > 1 ? 'S' : ''}`, blocks.join('\n───\n'), printUrl);
 }
 
 function buildReminderMessage(e, cfg, env) {
   const p = localParts(e.startMs, cfg.tz);
   const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
   const when = `${WD_LONG[dowOf(p)]} ${p.d}/${p.m}, ${clock}`;
-  const vehicle = (e.description || '').match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
   const lines = ['Hi! Just a reminder of your booking tomorrow with Andy Auto AC Regas:'];
-  if (vehicle) lines.push(`Vehicle: ${vehicle}`);
-  if (e.service) lines.push(`Service: ${e.service}`);
-  if (e.price) lines.push(`Price: ${e.price}`);
   lines.push(`Time: ${when}`);
   if (e.location) lines.push(`Address: ${e.location}`);
   lines.push('', env.CONFIRM_FOOTER || 'Any changes, reply here or call Andy on 0478 701 289. See you then!');
   return lines.join('\n');
 }
 
+const MANUAL_SERVICE_KEYWORDS = [
+  'add uv dye', 'uv dye',
+  'leak detection', 'leak check', 'leak test',
+  'pressure check', 'pressure test',
+  'service check', 'ac service', 'ac check',
+  'o-ring', 'oring',
+  'regas', 're-gas',
+  'valve',
+  'repair',
+];
+
 function parseSummaryFields(summary) {
-  // Strip customer name (FB format: "Service $Price – Name")
-  const s = summary.replace(/\s*–\s*.+$/, '').trim();
+  const hasName = /\s*–\s*.+$/.test(summary);
+  // Strip customer name (system format: "Service $Price – Name")
+  const s = hasName ? summary.replace(/\s*–\s*.+$/, '').trim() : summary;
   const priceMatch = s.match(/\$[\d,]+/);
   const price = priceMatch ? priceMatch[0] : '';
   const withoutPrice = s.replace(/\$[\d,]+/, '').trim();
-  // Split service from vehicle: vehicle usually starts with a 4-digit year
+  if (!hasName) {
+    // Free-form manual entry — scan for known service keywords
+    const lower = withoutPrice.toLowerCase();
+    const found = MANUAL_SERVICE_KEYWORDS.filter(kw => lower.includes(kw));
+    found.sort((a, b) => lower.indexOf(a) - lower.indexOf(b));
+    return { service: found.join(' + ') || withoutPrice, price, vehicle: '' };
+  }
+  // System format — split service from vehicle: vehicle usually starts with a 4-digit year
   const yearIdx = withoutPrice.search(/\b(19|20)\d{2}\b/);
   let service = '', vehicle = '';
   if (yearIdx > 0) {
     service = withoutPrice.slice(0, yearIdx).trim();
     vehicle = withoutPrice.slice(yearIdx).trim();
   } else {
-    // No year — first word is service, rest is vehicle
     const parts = withoutPrice.split(/\s+/);
     service = parts[0] || '';
     vehicle = parts.slice(1).join(' ');
@@ -1086,19 +1183,35 @@ function parseSummaryFields(summary) {
   return { service, price, vehicle };
 }
 
-async function printPage(env, origin) {
+async function printPage(env, origin, dateParam = '') {
   const cfg = config(env);
-  const bookings = await findTomorrowBookings(env, cfg);
   const today = todayInTz(cfg.tz);
+  let target;
+  const p = dateParam.toLowerCase();
+  if (p === 'today') {
+    target = { y: today.y, m: today.m, d: today.d };
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+    const [y, m, d] = dateParam.split('-').map(Number);
+    target = { y, m, d };
+  } else {
+    const tom = new Date(today.y, today.m - 1, today.d + 1);
+    target = { y: tom.getFullYear(), m: tom.getMonth() + 1, d: tom.getDate() };
+  }
+  const bookings = await findTomorrowBookings(env, cfg, { target });
+  const targetDate = new Date(target.y, target.m - 1, target.d);
+  const dateStr = `${WD_LONG[targetDate.getDay()]} ${target.d}/${target.m}/${target.y}`;
+  const isToday = target.y === today.y && target.m === today.m && target.d === today.d;
   const tom = new Date(today.y, today.m - 1, today.d + 1);
-  const dateStr = `${WD_LONG[tom.getDay()]} ${tom.getDate()}/${tom.getMonth() + 1}/${tom.getFullYear()}`;
+  const isTomorrow = target.y === tom.getFullYear() && target.m === tom.getMonth() + 1 && target.d === tom.getDate();
+  const targetIso = `${target.y}-${pad(target.m)}-${pad(target.d)}`;
 
+  const services = [];
   const rows = bookings.map((e, i) => {
     const p = localParts(e.startMs, cfg.tz);
     const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
     const desc = e.description || '';
     const isSms = !e.psid;
-    // FB bookings: service/price from X-FB fields; SMS: parse from summary
+    // FB bookings: service/price from X-FB fields; non-FB: parse from summary
     let service = e.service || '';
     let price = e.price || '';
     let vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
@@ -1108,6 +1221,7 @@ async function printPage(env, origin) {
       if (!price) price = parsed.price;
       if (!vehicle) vehicle = parsed.vehicle;
     }
+    services.push(service);
     const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
     const bg = isSms ? '#e0e0e0' : '#fff';
     const source = isSms ? 'SMS' : 'FB';
@@ -1124,8 +1238,12 @@ async function printPage(env, origin) {
     </tr>`;
   }).join('');
 
+  const needsFullKit = services.some(s => /pressure/i.test(s));
+  const equipmentBanner = needsFullKit
+    ? `<div class="equipment">⚠️ 全副武装 — pressure test equipment required today</div>` : '';
+
   const empty = bookings.length === 0
-    ? '<p class="empty">No bookings for tomorrow.</p>' : '';
+    ? `<p class="empty">No bookings for ${isToday ? 'today' : isTomorrow ? 'tomorrow' : dateStr}.</p>` : '';
 
   const tableHtml = bookings.length === 0 ? '' : `
   <table>
@@ -1136,6 +1254,10 @@ async function printPage(env, origin) {
     <tbody>${rows}</tbody>
   </table>`;
 
+  const secret = encodeURIComponent(env.VERIFY_TOKEN || '');
+  const baseUrl = `${origin}/print?secret=${secret}`;
+  const todayUrl = `${baseUrl}&date=today`;
+  const tomorrowUrl = baseUrl;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>Andy Auto – ${dateStr}</title>
 <style>
@@ -1151,8 +1273,14 @@ async function printPage(env, origin) {
   td.veh  { max-width: 140px; word-break: break-word; }
   .empty { color: #888; font-style: italic; }
   .src { color: #111; font-size: 0.8em; text-align: center; white-space: nowrap; width: 40px; }
-  @media print { tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  .toggle { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
+  .toggle a { padding: 6px 18px; border-radius: 6px; text-decoration: none; font-size: 0.9em; border: 1px solid #bbb; color: #333; background: #f5f5f5; }
+  .toggle a.active { background: #222; color: #fff; border-color: #222; }
+  .toggle input[type=date] { padding: 5px 10px; border-radius: 6px; border: 1px solid #bbb; font-size: 0.9em; color: #333; }
+  .equipment { background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px 16px; margin-bottom: 14px; font-weight: bold; font-size: 0.95em; }
   @media print {
+    .toggle { display: none; }
+    tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     @page { size: A4 landscape; margin: 15mm; }
     body { margin: 0; }
     th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -1160,18 +1288,28 @@ async function printPage(env, origin) {
 </style>
 </head><body>
 <h1>Andy Auto AC Regas</h1>
+<div class="toggle">
+  <a href="${todayUrl}"${isToday ? ' class="active"' : ''}>Today</a>
+  <a href="${tomorrowUrl}"${isTomorrow ? ' class="active"' : ''}>Tomorrow</a>
+  <label style="font-size:0.9em;color:#555;display:flex;align-items:center;gap:6px;">Other date: <input type="date" value="${targetIso}" onchange="location.href='${baseUrl}&date='+this.value"></label>
+</div>
 <h2>Appointments for ${dateStr} &nbsp;·&nbsp; ${bookings.length} booking${bookings.length !== 1 ? 's' : ''}</h2>
-${empty}${tableHtml}
+${equipmentBanner}${empty}${tableHtml}
 </body></html>`;
 
   return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8' } });
 }
 
-async function findTomorrowBookings(env, cfg, { skipToday = false } = {}) {
+async function findTomorrowBookings(env, cfg, { skipToday = false, offset = 1, target = null } = {}) {
   const cal = await calendarUrl(env);
   const today = todayInTz(cfg.tz);
-  const tom = new Date(today.y, today.m - 1, today.d + 1);
-  const t = { y: tom.getFullYear(), m: tom.getMonth() + 1, d: tom.getDate() };
+  let t;
+  if (target) {
+    t = target;
+  } else {
+    const tom = new Date(today.y, today.m - 1, today.d + offset);
+    t = { y: tom.getFullYear(), m: tom.getMonth() + 1, d: tom.getDate() };
+  }
   const startMs = zonedToUtc(`${t.y}-${pad(t.m)}-${pad(t.d)}T00:00:00`, cfg.tz);
   const endMs = zonedToUtc(`${t.y}-${pad(t.m)}-${pad(t.d)}T23:59:59`, cfg.tz);
   const r = await dav(env, 'REPORT', cal, {
@@ -1232,7 +1370,7 @@ async function onCustomerMessage(ev, env, origin) {
     }
   }
 
-  await bark(env, title, body, '');
+  await bark(env, title, body, '', '', '', env.BARK_GROUP_CUSTOMER || 'Customers'); // 客人消息：单独分组
 }
 
 // ================= 读取消息 =================
@@ -1835,13 +1973,18 @@ function customerCard(name, env) {
 }
 
 // BARK_URL 可以放多个网址，用逗号隔开
-async function bark(env, title, body, link, copy) {
+function barkBooking(env, title, body, link, copy) {
+  return bark(env, title, body, link, copy, env.BARK_SOUND_BOOKING);
+}
+
+async function bark(env, title, body, link, copy, sound, group) {
   const urls = (env.BARK_URL || '').split(/[,\s]+/).map(u => u.trim().replace(/\/+$/, '')).filter(Boolean);
   if (!urls.length) return;
   const path = `/${encodeURIComponent(title)}/${encodeURIComponent(String(body || ' ').slice(0, 1500))}`;
-  let query = `?group=${encodeURIComponent(env.BARK_GROUP || 'Bookings')}`;
+  let query = `?group=${encodeURIComponent(group || env.BARK_GROUP || 'Bookings')}`;
   if (link) query += `&url=${encodeURIComponent(link)}`;
   if (copy) query += `&copy=${encodeURIComponent(copy)}`;
+  if (sound) query += `&sound=${encodeURIComponent(sound)}`;
   await Promise.all(urls.map(u => fetch(u + path + query).catch(e => console.error('bark', e))));
 }
 
