@@ -326,6 +326,10 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg) {
     const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
     return customerMessage(ai, t, env, `Hi ${ai.name || 'there'}! Your booking is confirmed:`);
   }
+  if (action === 'cancel') {
+    // 取消：复用 FB 的 doCancel 逻辑（待实现）
+    throw new Error('Booking cancelled — calendar cancellation via iMessage not yet implemented');
+  }
   throw new Error(`Action "${action}" not yet supported via iMessage keyword`);
 }
 
