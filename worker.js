@@ -324,7 +324,17 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg) {
   if (action === 'confirm') {
     await saveSmsFromAi(ai, env, cfg);
     const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
-    return customerMessage(ai, t, env, `Hi ${ai.name || 'there'}! Your booking is confirmed:`);
+    const { y, m, d } = t.date;
+    const { h, min } = t.start;
+    const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
+    const when = `${WD_LONG[dowOf({ y, m, d })]} ${d}/${m}, ${clock}`;
+    const lines = [];
+    if (ai.service) lines.push(`Service: ${ai.service}`);
+    if (ai.price) lines.push(`Price: ${ai.price}`);
+    lines.push(`Time: ${when}`);
+    if (ai.address) lines.push(`Address: ${ai.address}`);
+    if (ai.vehicle) lines.push(`Vehicle: ${ai.vehicle}`);
+    return lines.join('\n');
   }
   if (action === 'cancel') {
     // 取消：复用 FB 的 doCancel 逻辑（待实现）
