@@ -1,15 +1,5 @@
 # TODO
 
-## 待做：iMessage 关键词触发 📲
-
-- [x] **Booking Updated**
-  - Andy 发 "Booking updated" → AI 识别变更内容（时间 / 地点 / 项目）→ 更新日历 → 回复客人
-
-- [x] **Booking Cancelled**
-  - Andy 发 "Booking cancelled" → 删除日历事件 → 回复客人 "Feel free to rebook anytime!"
-
----
-
 ## 待做：AI 自动报价 💬
 
 客人发消息询价时，AI 自动引导对话：
@@ -41,12 +31,21 @@
 
 ## 已完成 ✅
 
-- [x] iMessage "Booking confirmed" 自动触发：建日历 + 回复客人 + Bark 通知
+**iMessage 关键词触发**
+- [x] "Booking confirmed" → 建日历 + 回复客人 + Bark 通知
+- [x] "Booking updated" → AI 检测变更字段 → 更新日历 → 回复客人（只显示改了的字段）
+- [x] "Booking cancelled" → 删除日历事件 → 回复 "Feel free to rebook anytime!"
+- [x] 关键词可出现在消息任意位置（不限于开头）
+- [x] 回复格式：`✅ Andy Auto AC Regas / Time: DD/MM Weekday, H:MMpm / See you then!`
+
+**Bug 修复**
 - [x] typedstream 解析 bug（`rBooking confirmed` 前缀）
+- [x] decode_text 返回完整消息内容（不截断关键词前文字）
 - [x] AppleScript 发送 emoji 报错（`✅` 语法错误 -2741）
 - [x] send_imessage 加超时 + 失败详细日志
+
+**稳定性**
 - [x] PID 锁（防止多个 server.py 同时运行）
 - [x] SIGTERM handler（日志记录崩溃原因）
 - [x] plist 加 ThrottleInterval 10（防止崩溃死循环）
-- [x] 回复格式：`✅ Andy Auto AC Regas / Time: DD/MM Weekday, H:MMpm / See you then!`
-- [x] upgrade.sh 一键升级
+- [x] upgrade.sh 一键升级（自动更新 server.py + plist + 重启）

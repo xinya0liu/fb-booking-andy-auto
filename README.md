@@ -23,7 +23,7 @@ FB 部分只有一个 Cloudflare Worker（`worker.js`），不需要服务器。
 | `Booking change` | 修改预约，只照消息里写的 | ❌ | ❌ |
 | `Booking cancelled` | 删除预约 | ❌ | ❌ |
 
-开头前面可以有 emoji，不分大小写。聊天中间顺口打出这些词不会触发。
+开头前面可以有 emoji，不分大小写。iMessage 渠道关键词出现在消息任意位置均可触发；Facebook Messenger 渠道需要放在消息开头。
 
 完整说明见 **[使用说明](docs/USER_GUIDE.md)**。
 
@@ -53,8 +53,18 @@ iPhone 日历几乎马上更新；点通知或事件里的链接，打开客人�
 
 ### iMessage（短信）
 
+Andy 在 iMessage 对话里发含有以下关键词的消息，系统自动处理：
+
+| 关键词 | 做什么 | 自动回复客人 |
+|---|---|---|
+| `Booking confirmed` | AI 提取对话 → 新建日历事件 | `✅ Andy Auto AC Regas / Time: ... / See you then!` |
+| `Booking updated` | AI 检测变更字段 → 更新日历事件 | `🔄 Andy Auto AC Regas / Updated time: ... / See you then!` |
+| `Booking cancelled` | 删除日历事件 | `Feel free to rebook anytime!` |
+
+关键词不分大小写，出现在消息任意位置都能触发。
+
 ```
-Andy 在 iMessage 对话里发 “Booking confirmed”
+Andy 在 iMessage 对话里发含关键词的消息
             │
             ▼
 Andy Mac 上的 server.py（launchd 后台常驻）
@@ -63,8 +73,10 @@ Andy Mac 上的 server.py（launchd 后台常驻）
             │
             ▼
 Cloudflare Worker
-  ├─ AI 提取预约资料 → 写入 iCloud 日历
-  ├─ 生成确认消息返回 Mac
+  ├─ confirmed：AI 提取预约资料 → 新建 iCloud 日历事件
+  ├─ updated：AI 检测变更 → 按电话号码找到现有事件 → 更新
+  ├─ cancelled：按电话号码找到现有事件 → 删除
+  ├─ 生成回复消息返回 Mac
             │
             ▼
 Mac 的 server.py 用 AppleScript 自动发 iMessage 给客人
