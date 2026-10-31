@@ -1,13 +1,5 @@
 # TODO
 
-## 紧急 / 清理 🧹
-
-- [ ] **删除旧的 Shortcut 预约代码**（用电话号码触发那套）
-  - 已不再使用，拖慢程序，直接删掉
-  - 涉及 worker.js 里的相关 endpoint
-
----
-
 ## 待做：iMessage 关键词触发 📲
 
 - [ ] **Booking Updated**
