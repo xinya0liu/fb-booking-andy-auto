@@ -8,12 +8,12 @@
 
 ## 只要记住这两件事
 
-1. **消息的开头决定会发生什么。** 只有下面五个开头会触发，其他任何消息都不会。
+1. **关键词决定会发生什么。** 只有下面的关键词会触发，其他任何消息都不会。
 2. **每次都看一下 Bark。** 成功、失败、撞时间都会通知。收到 ⚠️ 就表示日历没有照预期更新，要处理一下。
 
 另外，一定要在**那位客人自己的对话里**发。系统是靠对话来认客人的。
 
-## 五个开头
+## Facebook Messenger 关键词（消息开头触发）
 
 | 开头 | 做什么 | 用 AI | 自动回复客人 |
 |---|---|---|---|
@@ -26,9 +26,20 @@
 **记法：** `Booking confirmed` / `Booking updated` 交给 AI，并且会自动回复客人；`Booked you in` / `Booking change` 是你自己写好资料，只更新日历。
 
 - 开头前面可以有 emoji（例如 `✅`、`🔄`、`❌`），有没有空格都可以。
-- 不分大小写。`Booking changed`、`Booking canceled`（一个 l）也认得。
-- 必须是**消息的开头**。“Sure, your booking confirmed time is…” 这种句子不会触发。
-- 其他写法都**不会触发，也不会有任何提醒**，例如 `Booking rescheduled`、`Booking changes`。建议全部存成“已保存的回复”，用点选的，不要手打。
+- 不分大小写。
+- 必须是**消息的开头**，聊天中间出现不会触发。
+- 其他写法都**不会触发，也不会有任何提醒**，例如 `Booking rescheduled`、`Booking changes`。建议全部存成”已保存的回复”，用点选的，不要手打。
+
+## iMessage（短信）关键词（消息任意位置触发）
+
+| 关键词 | 做什么 | 自动回复客人 |
+|---|---|---|
+| `Booking confirmed` | AI 读对话 → 新建日历事件 | `✅ Andy Auto AC Regas / Time: ... / See you then!` |
+| `Booking updated` | AI 检测变更 → 更新日历事件（只显示改了的字段） | `🔄 Andy Auto AC Regas / Updated time: ... / See you then!` |
+| `Booking cancelled` | 按电话号码找到事件 → 删除 | `Feel free to rebook anytime!` |
+
+- 不分大小写，关键词出现在消息**任意位置**都能触发。
+- 需要 Andy Mac 保持开机并插电（launchd 后台服务常驻）。
 
 ## 平常最常用的三句（AI）
 
@@ -234,29 +245,35 @@ iPhone 上的 Business Suite 不支持“直接打开某一个对话”的链接
 
 改成客人卡片之前建立的事件，链接还是旧的写法，会打开最新的对话，不一定是那位客人。
 
-## iMessage（短信）触发
+## iMessage 自动回复格式
 
-Andy 在 iPhone iMessage 短信对话里直接发关键词，Mac 后台服务会自动处理。
+**Booking confirmed** 发给客人：
+```
+✅ Andy Auto AC Regas
+Time: 31/10 Saturday, 3:00pm
+See you then!
+```
 
-| Andy 发的消息 | 系统动作 |
-|---|---|
-| `Booking confirmed` | AI 读对话 → 建日历 → 自动回复客人确认详情 |
-| `Booking updated` | 待实现 |
-| `Booking cancelled` | 待实现 |
+**Booking updated** 只显示有变的字段，例如只改了时间：
+```
+🔄 Andy Auto AC Regas
+Updated time: 01/11 Sunday, 3:00pm
+See you then!
+```
 
-**与 FB 的区别：**
-- 不需要 Facebook，直接在 iMessage 里发
-- 关键词大小写无关，后面加文字也可以（例如 `Booking confirmed, see you Friday`）
-- 自动回复格式（发给客人的消息）：
-  ```
-  Service: AC Regas
-  Price: $179
-  Time: Friday 30/10, 11:00pm
-  Address: 55 Molly Court, Eagleby
-  Vehicle: Audi A3
-  See you then!
-  ```
-- 需要 Andy Mac 保持开机且插电（launchd 后台服务一直跑）
+改了多个字段：
+```
+🔄 Andy Auto AC Regas
+Updated time: 01/11 Sunday, 3:00pm
+Updated price: $220
+Updated vehicle: Toyota Camry
+See you then!
+```
+
+**Booking cancelled** 发给客人：
+```
+Feel free to rebook anytime!
+```
 
 **Mac 必须满足的条件（只需设置一次）：**
 - Andy 账号登录过 iMessage

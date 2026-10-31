@@ -17,7 +17,8 @@
 | 现象 | 可能原因 | 处理方法 |
 |---|---|---|
 | push 了新代码，但线上还是旧的（新功能没出现） | Cloudflare 没有收到 GitHub 的通知；或有人在 Edit code 按了 Deploy，把旧代码重新部署 | 见下面“确认线上是最新代码” |
-| 发了消息，**完全没有 Bark 通知** | 开头不是五个关键词之一（例如写成 `Booking rescheduled`），或关键词不在消息最开头 | 改用已保存的回复重发 |
+| 发了消息，**完全没有 Bark 通知**（Facebook） | 开头不是关键词之一（例如写成 `Booking rescheduled`），或关键词不在消息最开头 | 改用已保存的回复重发 |
+| 发了消息，**完全没有 Bark 通知**（iMessage） | Mac 服务没在跑；或消息不含支持的关键词 | 检查 Mac 服务：`ps aux \| grep server.py`；看 `~/imessage-service/service.log` |
 | 同上 | Meta 没有推送给 Worker | 检查 Meta App 的 Webhooks 是否还订阅了 `message_echoes`；回调网址是不是这个 Worker；App 是否还是 Live |
 | 同上 | Bark 本身有问题 | 用浏览器打开 `https://api.day.app/<key>/测试`，看手机收不收得到 |
 | `iCloud sign-in failed (401)` | 改过 Apple ID 密码，所有 App 专用密码会自动失效；或者密码被撤销 | 到 account.apple.com 重新生成 App 专用密码，更新 Cloudflare 的 `ICLOUD_APP_PASSWORD` |
@@ -110,7 +111,7 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
 - **修改事件只换掉指定的栏位**，其他内容（例如在 iPhone 上加的提醒）原样保留；写入时带 `If-Match`，避免覆盖同时在别处做的修改。
 - **只处理自己建立的事件**：没有客人编号的事件（手动建立的）不会被修改或删除。
 - 旧事件的后备：备注里有 `Customer ID: <psid>` 的事件也找得到。
-- **关键词只看消息开头**（`detectAction`）。聊天中间出现的不算，避免误触发。
+- **Facebook 关键词只看消息开头**（`detectAction`）。聊天中间出现的不算，避免误触发。iMessage 关键词用 `in` 检查，消息任意位置均可触发。
 - **Worker 发给客人的消息带 `metadata: "fb-booking"`**，Meta 回传时会被跳过；自动消息的第一行也不能以五个关键词开头。这两道防线避免自己触发自己。
 - **AI 用工具调用回传资料**（`tool_choice` 强制使用 `save_booking`），不会回一段自由文字导致解析失败。
 - **你写的栏位永远优先于 AI**；AI 或读对话失败时（`serviceError`），消息里有写栏位就照写的处理。
@@ -151,6 +152,34 @@ Cloudflare Workers 免费方案、GitHub、Bark、iCloud 日历、Meta API 都�
 唯一的费用是 **Anthropic API**：每次发 `Booking confirmed` / `Booking updated` 会读一次对话，每单大约不到一分钱澳币，一个月几百单也只是几块钱。到 console.anthropic.com 可以看用量、设消费上限。额度用完时，Bark 会提示 `AI couldn't read the chat`，这时可以暂时用 `Booked you in` / `Booking change`。
 
 不要在 Cloudflare 或 Google Cloud 开通付费方案或绑卡计费。
+
+## iMessage 服务维护（Andy Mac）
+
+升级 server.py（在 Andy 账号 Terminal 运行）：
+```bash
+bash /Users/shared/upgrade.sh
+```
+
+常用排查命令：
+```bash
+# 查服务是否在跑
+ps aux | grep server.py
+
+# 看日志
+tail -f ~/imessage-service/service.log
+
+# 看 last_rowid（扫描进度）
+cat ~/imessage-service/last_rowid.txt
+
+# 手动重置 last_rowid（让服务重新扫某条消息）
+echo <ROWID减1> > ~/imessage-service/last_rowid.txt
+launchctl unload ~/Library/LaunchAgents/com.andyauto.imessage.plist
+launchctl load ~/Library/LaunchAgents/com.andyauto.imessage.plist
+```
+
+服务崩溃（日志里出现连续多次 `iMessage polling service started`）：
+- 看日志有没有 `Received SIGTERM` → launchd 在杀进程，检查 plist 有没有 `ThrottleInterval 10`
+- 看日志有没有 `Already running` → 有残留进程，运行 `pkill -f server.py` 再重启服务
 
 ## 可能需要维护的情况
 
