@@ -2,11 +2,11 @@
 
 ## 待做：iMessage 关键词触发 📲
 
-- [ ] **Booking Updated**
+- [x] **Booking Updated**
   - Andy 发 "Booking updated" → AI 识别变更内容（时间 / 地点 / 项目）→ 更新日历 → 回复客人
 
-- [ ] **Booking Cancelled**
-  - Andy 发 "Booking cancelled" → 删除或标记日历事件 → 回复客人取消确认
+- [x] **Booking Cancelled**
+  - Andy 发 "Booking cancelled" → 删除日历事件 → 回复客人 "Feel free to rebook anytime!"
 
 ---
 
