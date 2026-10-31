@@ -327,7 +327,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg) {
     const { y, m, d } = ai.date;
     const { h, min } = ai.start;
     const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
-    const when = `${WD_LONG[dowOf({ y, m, d })]} ${d}/${m}, ${clock}`;
+    const when = `${d}/${m} ${WD_LONG[dowOf({ y, m, d })]}, ${clock}`;
     const lines = ['✅ Andy Auto AC Regas'];
     if (ai.service) lines.push(`Service: ${ai.service}`);
     if (ai.price) lines.push(`Price: ${ai.price}`);
