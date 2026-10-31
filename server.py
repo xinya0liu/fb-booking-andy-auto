@@ -23,6 +23,12 @@ def _acquire_pid_lock():
 
 _acquire_pid_lock()
 
+import signal
+def _sigterm_handler(sig, frame):
+    print("Received SIGTERM — shutting down cleanly.", flush=True)
+    sys.exit(0)
+signal.signal(signal.SIGTERM, _sigterm_handler)
+
 def load_last_rowid():
     try:
         return int(open(ROWID_FILE).read().strip())
