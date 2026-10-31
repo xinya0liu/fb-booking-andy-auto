@@ -136,9 +136,12 @@ def query(phone):
 
 def send_imessage(phone, text):
     e164 = to_e164(phone)
+    # AppleScript can't handle json \uXXXX or \n escapes — build string manually
+    parts = [p.replace('"', '" & quote & "') for p in text.split('\n')]
+    as_str = '" & return & "'.join(parts)
     script = f'''tell application "Messages"
         set svc to 1st service whose service type = iMessage
-        send {json.dumps(text)} to buddy "{e164}" of svc
+        send "{as_str}" to buddy "{e164}" of svc
     end tell'''
     subprocess.run(["osascript", "-e", script], check=True, timeout=30)
 
