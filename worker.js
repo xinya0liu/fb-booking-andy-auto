@@ -330,9 +330,103 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg) {
     const when = `${d}/${m} ${WD_LONG[dowOf({ y, m, d })]}, ${clock}`;
     return `✅ Andy Auto AC Regas\nTime: ${when}\nSee you then!`;
   }
-  if (action === 'cancelled' || action === 'cancel') {
-    throw new Error('Booking cancelled — calendar cancellation via iMessage not yet implemented');
+  if (action === 'updated' || action === 'update') {
+    const list = await findBookingsByPhone(phone, env, cfg);
+    if (!list.length) {
+      await saveSmsFromAi(ai, env, cfg);
+      await bark(env, `⚠️ Booking updated: no existing event found`, `Created new booking for ${phone} instead.`, '');
+      const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
+      const { y, m, d } = ai.date; const { h, min } = ai.start;
+      const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
+      return `✅ Andy Auto AC Regas\nTime: ${d}/${m} ${WD_LONG[dowOf({ y, m, d })]}, ${clock}\nSee you then!`;
+    }
+    const target = list[0];
+    const old = localParts(target.startMs, cfg.tz);
+    const now = utcStamp(Date.now());
+    const changes = {
+      SEQUENCE: [`SEQUENCE:${target.sequence + 1}`],
+      DTSTAMP: [`DTSTAMP:${now}`],
+      'LAST-MODIFIED': [`LAST-MODIFIED:${now}`],
+    };
+    const replyLines = [];
+    const noteFields = [];
+
+    if (ai.date && ai.start) {
+      const sameDate = ai.date.y === old.y && ai.date.m === old.m && ai.date.d === old.d;
+      const sameTime = ai.start.h === old.h && ai.start.min === old.min;
+      if (!sameDate || !sameTime) {
+        const duration = target.endMs - target.startMs;
+        const t = buildTimes(ai.date, ai.start, ai.end, duration > 0 ? duration : cfg.minutes * 60000);
+        changes.DTSTART = [`DTSTART:${utcStamp(zonedToUtc(t.start, cfg.tz))}`];
+        changes.DTEND = [`DTEND:${utcStamp(zonedToUtc(t.end, cfg.tz))}`];
+        changes.DURATION = null;
+        const { y, m, d } = ai.date; const { h, min } = ai.start;
+        const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
+        const label = `${d}/${m} ${WD_LONG[dowOf({ y, m, d })]}, ${clock}`;
+        replyLines.push(`Updated time: ${label}`);
+        noteFields.push(`Time: ${t.label}`);
+      }
+    }
+    if (ai.address && ai.address !== target.location) {
+      changes.LOCATION = [`LOCATION:${icsEsc(ai.address)}`];
+      replyLines.push(`Updated address: ${ai.address}`);
+      noteFields.push(`Address: ${ai.address}`);
+    }
+    if (ai.service && ai.service !== target.service) {
+      changes['X-FB-SERVICE'] = [`X-FB-SERVICE:${icsEsc(ai.service)}`];
+      replyLines.push(`Updated service: ${ai.service}`);
+      noteFields.push(`Service: ${ai.service}`);
+    }
+    if (ai.price && ai.price !== target.price) {
+      changes['X-FB-PRICE'] = [`X-FB-PRICE:${icsEsc(ai.price)}`];
+      replyLines.push(`Updated price: ${ai.price}`);
+      noteFields.push(`Price: ${ai.price}`);
+    }
+    if (changes['X-FB-SERVICE'] || changes['X-FB-PRICE']) {
+      changes.SUMMARY = [`SUMMARY:${icsEsc(buildSummary(target.name || 'SMS Customer', ai.service || target.service, ai.price || target.price))}`];
+    }
+    if (ai.vehicle) {
+      const descVehicle = (target.description.match(/Vehicle:\s*(.+)/i) || [])[1]?.trim() || '';
+      if (ai.vehicle !== descVehicle) {
+        replyLines.push(`Updated vehicle: ${ai.vehicle}`);
+        noteFields.push(`Vehicle: ${ai.vehicle}`);
+      }
+    }
+    if (!replyLines.length) {
+      await bark(env, `ℹ️ Booking updated: no changes detected`, `Phone: ${phone}`, '');
+      return null;
+    }
+    const changedLabels = replyLines.map(l => l.replace(/^Updated /, '').split(':')[0]);
+    changes.DESCRIPTION = [`DESCRIPTION:${icsEsc(mergeNotes(target.description, noteFields, `Updated: ${changedLabels.join(', ')}`))}` ];
+    try {
+      await dav(env, 'PUT', target.href, { body: editEvent(target.ics, changes), headers: target.etag ? { 'if-match': target.etag } : {} });
+    } catch (e) {
+      if (e.status === 412) throw new Error('The event was changed on another device. Please send the update again.');
+      throw e;
+    }
+    await barkBooking(env, `🔄 Booking updated: ${target.name || 'SMS Customer'}`, replyLines.join('\n'), smsLink(phone), '');
+    return `🔄 Andy Auto AC Regas\n${replyLines.join('\n')}\nSee you then!`;
   }
+
+  if (action === 'cancelled' || action === 'cancel') {
+    const list = await findBookingsByPhone(phone, env, cfg);
+    if (!list.length) {
+      await bark(env, `⚠️ Booking not found for ${phone}`, 'No upcoming booking found. Please update the calendar manually.', '');
+      return null;
+    }
+    const target = list[0];
+    try {
+      await dav(env, 'DELETE', target.href, { headers: target.etag ? { 'if-match': target.etag } : {}, ok: [404] });
+    } catch (e) {
+      if (e.status === 412) throw new Error('The event was changed on another device. Please try cancelling again.');
+      throw e;
+    }
+    const p = localParts(target.startMs, cfg.tz);
+    const more = list.length > 1 ? '\nℹ️ This customer has other upcoming bookings.' : '';
+    await barkBooking(env, `❌ Booking cancelled: ${target.name || 'SMS Customer'}`, [p.label, target.service].filter(Boolean).join(' · ') + more, smsLink(phone), p.label);
+    return `Feel free to rebook anytime!`;
+  }
+
   throw new Error(`Action "${action}" not yet supported via iMessage keyword`);
 }
 
@@ -1663,6 +1757,35 @@ async function findBookings(env, cfg, psid) {
     if (!e.startMs || e.endMs <= now) continue;
     const tagged = e.psid || (e.uid.match(/-(\d+)@fb-booking$/) || [])[1]; // 隐藏栏位或 UID 里的客人编号
     if (tagged ? tagged !== psid : !e.description.includes(psid)) continue; // 旧事件：备注里的 Customer ID
+    e.href = new URL(xmlText(xmlOne(resp, 'href')), cal).href;
+    e.etag = xmlText(xmlOne(resp, 'getetag')) || null;
+    list.push(e);
+  }
+  return list.sort((a, b) => a.startMs - b.startMs);
+}
+
+async function findBookingsByPhone(phone, env, cfg) {
+  const digits = phone.replace(/[^\d]/g, '');
+  const core = digits.startsWith('61') ? digits.slice(2) : digits.startsWith('0') ? digits.slice(1) : digits;
+  const variants = [phone, digits, core, '0' + core, '61' + core, '+61' + core];
+
+  const cal = await calendarUrl(env);
+  const now = Date.now();
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><d:getetag/><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(now)}" end="${utcStamp(now + 400 * 864e5)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+  const list = [];
+  for (const resp of xmlAll(r.text, 'response')) {
+    const ics = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!ics.includes('BEGIN:VEVENT')) continue;
+    const e = parseEvent(ics, cfg.tz);
+    if (!e.startMs || e.endMs <= now) continue;
+    const searchText = (e.description || '') + ics;
+    if (!variants.some(v => v && searchText.includes(v))) continue;
     e.href = new URL(xmlText(xmlOne(resp, 'href')), cal).href;
     e.etag = xmlText(xmlOne(resp, 'getetag')) || null;
     list.push(e);

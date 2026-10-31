@@ -56,16 +56,6 @@ def decode_text(text, attributed_body):
         blob = attributed_body if isinstance(attributed_body, bytes) else bytes(attributed_body)
         if blob[:1] != b'\x04':
             return ''
-        lower_blob = blob.lower()
-        # Search for keywords directly — avoids typedstream variable-length prefix artifacts
-        for kw in (b'booking confirmed', b'booking updated', b'booking cancelled'):
-            idx = lower_blob.find(kw)
-            if idx >= 0:
-                end = idx
-                while end < len(blob) and 0x20 <= blob[end] <= 0x7e:
-                    end += 1
-                return blob[idx:end].decode('utf-8', errors='replace')
-        # Fallback for non-keyword messages (conversation history)
         for s in re.findall(rb'[a-zA-Z][\x20-\x7e]{3,}', blob):
             if s in _TS_SKIP:
                 continue
@@ -176,11 +166,11 @@ def scan_keywords():
                 text = decode_text(sql_text, attributed_body).lower().strip()
                 if not text:
                     continue
-                if text.startswith('booking confirmed'):
+                if 'booking confirmed' in text:
                     action = 'confirmed'
-                elif text.startswith('booking updated'):
+                elif 'booking updated' in text:
                     action = 'updated'
-                elif text.startswith('booking cancelled'):
+                elif 'booking cancelled' in text:
                     action = 'cancelled'
                 else:
                     continue
