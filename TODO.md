@@ -1,38 +1,53 @@
 # TODO
 
-## 进行中 🔧
+## 紧急 / 清理 🧹
 
-- [ ] 确认崩溃循环是否彻底解决
-  - 下次出现崩溃，检查日志是否有 "Received SIGTERM — shutting down cleanly."
-  - 有 → launchd 主动杀进程，原因待查（网络超时？资源占用？）
-  - 无 → 代码本身崩溃，截图发给 Claude
+- [ ] **删除旧的 Shortcut 预约代码**（用电话号码触发那套）
+  - 已不再使用，拖慢程序，直接删掉
+  - 涉及 worker.js 里的相关 endpoint
 
-## 待做 📋
+---
 
-- [ ] 弄清楚 launchd 为什么会发 SIGTERM（正常运行时不应该发）
-  - 怀疑：Worker 返回 500 时进程被卡住超时，launchd 强杀
-  - 验证方法：在日志里对比 SIGTERM 时间和 Worker 500 时间
+## 待做：iMessage 关键词触发 📲
 
-- [ ] 测试多设备发 "Booking confirmed" 是否都能正常触发
-  - iPhone ✅（已测试）
-  - iPad ❓
-  - Mac ❓
+- [ ] **Booking Updated**
+  - Andy 发 "Booking updated" → AI 识别变更内容（时间 / 地点 / 项目）→ 更新日历 → 回复客人
 
-- [ ] 考虑加 Bark 通知：回复客人失败时通知 Andy
-  - 目前 SEND FAILED 只打印到日志，Andy 不会即时知道
+- [ ] **Booking Cancelled**
+  - Andy 发 "Booking cancelled" → 删除或标记日历事件 → 回复客人取消确认
 
-- [ ] 客人回复消息后是否需要 AI 继续处理？
-  - 目前只做单向：Andy 发关键词 → 回复客人 → 结束
-  - 客人如果回复"谢谢"等，暂不处理
+---
+
+## 待做：AI 自动报价 💬
+
+客人发消息询价时，AI 自动引导对话：
+
+1. 客人发车型 → AI 查该车型需要多少冷媒重量
+2. 客人发地址 → AI 根据距离计算出行费用
+3. AI 综合车型 + 地址 → 自动生成报价回复给客人
+4. AI 查询日历空闲时间窗口 → 给客人推荐可预约时间
+
+适用渠道：Facebook Messenger、SMS
+
+---
+
+## 待做：CRM / 看板 📊
+
+- [ ] 建一个看板，集中显示所有客人信息：
+  - 姓名、电话、车型、地址、历史预约、报价记录
+  - 支持后续跟踪（follow-up）
+  - 可能用 Cloudflare D1 或外部工具实现
+
+---
 
 ## 已完成 ✅
 
+- [x] iMessage "Booking confirmed" 自动触发：建日历 + 回复客人 + Bark 通知
 - [x] typedstream 解析 bug（`rBooking confirmed` 前缀）
 - [x] AppleScript 发送 emoji 报错（`✅` 语法错误 -2741）
-- [x] send_imessage 加 30 秒超时
-- [x] send_imessage 失败时打印详细错误（SEND FAILED）
+- [x] send_imessage 加超时 + 失败详细日志
 - [x] PID 锁（防止多个 server.py 同时运行）
 - [x] SIGTERM handler（日志记录崩溃原因）
 - [x] plist 加 ThrottleInterval 10（防止崩溃死循环）
 - [x] 回复格式：`✅ Andy Auto AC Regas / Time: DD/MM Weekday, H:MMpm / See you then!`
-- [x] upgrade.sh 一键升级（自动更新 server.py + plist + 重启）
+- [x] upgrade.sh 一键升级
