@@ -118,3 +118,88 @@ Worker 名称是 `fb-booking-andy-auto`，连接这个 GitHub 仓库自动部署
    应该看到：朋友收到自动确认消息（$220、星期日 2:00pm、电话是 0400 123 456 而不是你的号码）；日历出现事件；Bark 写 “Confirmation sent”。
 4. 再测修改：朋友说想改到 4pm，你回复同意后发 `Booking updated 👍 I'll send through your updated booking details shortly.`
 5. 最后取消：`Booking cancelled – your booking for Sunday … 4pm has been cancelled.`
+
+## 8. iMessage 服务（Andy Mac）
+
+这一步让 Andy 的 Mac 自动监听 iMessage 关键词，完成关键词 → 日历 → 自动回复客人的 iMessage 流程。
+
+### 8.1 准备工作（只需一次）
+
+在 Andy 账号登录的 Mac 上：
+
+**Full Disk Access（读 chat.db）**
+- System Settings → Privacy & Security → Full Disk Access
+- 把 **Terminal** 和 **/usr/bin/python3** 都打开 ✅
+
+**Automation → Messages（发 iMessage）**
+- System Settings → Privacy & Security → Automation
+- 找到 **Terminal**，展开，把 **Messages** 打开 ✅
+
+**防休眠**
+- System Settings → Battery → Options → “Prevent automatic sleeping on power adapter when the display is off” → 打开 ✅
+
+### 8.2 安装 server.py 和 launchd
+
+在 Andy 账号 Terminal 运行（整段复制粘贴）：
+
+```bash
+# 创建服务目录
+mkdir -p ~/imessage-service
+
+# 创建 launchd plist（开机自启）
+cat > ~/Library/LaunchAgents/com.andyauto.imessage.plist << 'EOF'
+<?xml version=”1.0” encoding=”UTF-8”?>
+<!DOCTYPE plist PUBLIC “-//Apple//DTD PLIST 1.0//EN” “http://www.apple.com/DTDs/PropertyList-1.0.dtd”>
+<plist version=”1.0”>
+<dict>
+    <key>Label</key>
+    <string>com.andyauto.imessage</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/andy/imessage-service/server.py</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/andy/imessage-service/service.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/andy/imessage-service/service.log</string>
+</dict>
+</plist>
+EOF
+
+# 复制 server.py 并启动服务
+bash /Users/shared/upgrade.sh
+```
+
+### 8.3 验证服务正常
+
+```bash
+# 看日志，应该显示 “iMessage polling service started”（只有一行）
+tail -f ~/imessage-service/service.log
+```
+
+### 8.4 端对端测试（iMessage）
+
+1. Andy 在 iPhone 找一段真实客人的 SMS 对话（有时间、服务、地址等信息）
+2. 在那个对话里发一条消息：`Booking confirmed for tomorrow 3pm regas $150`
+3. 预期：
+   - Log 出现 `Keyword: booking confirmed from +61xxxxxxxxx`
+   - Log 出现 `Replied to +61xxxxxxxxx`
+   - 日历新增事件 ✅
+   - Bark 收到通知 ✅
+   - 客人收到自动回复 ✅
+
+测试 updated 和 cancelled 同样步骤，把关键词换掉即可。
+
+### 8.5 日常升级
+
+有新版本时，在 Andy Terminal 运行：
+```bash
+bash /Users/shared/upgrade.sh
+```
