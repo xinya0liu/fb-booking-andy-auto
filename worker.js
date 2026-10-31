@@ -328,14 +328,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg) {
     const { h, min } = ai.start;
     const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
     const when = `${d}/${m} ${WD_LONG[dowOf({ y, m, d })]}, ${clock}`;
-    const lines = ['✅ Andy Auto AC Regas'];
-    if (ai.service) lines.push(`Service: ${ai.service}`);
-    if (ai.price) lines.push(`Price: ${ai.price}`);
-    lines.push(`Time: ${when}`);
-    if (ai.address) lines.push(`Address: ${ai.address}`);
-    if (ai.vehicle) lines.push(`Vehicle: ${ai.vehicle}`);
-    lines.push('See you then!');
-    return lines.join('\n');
+    return `✅ Andy Auto AC Regas\nTime: ${when}\nSee you then!`;
   }
   if (action === 'cancelled' || action === 'cancel') {
     throw new Error('Booking cancelled — calendar cancellation via iMessage not yet implemented');
