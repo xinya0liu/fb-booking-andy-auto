@@ -15,7 +15,7 @@ def _acquire_pid_lock():
             pid = int(open(PIDFILE).read().strip())
             os.kill(pid, 0)
             print(f"Already running (PID {pid}). Exiting.", flush=True)
-            sys.exit(0)
+            sys.exit(1)
         except (ProcessLookupError, ValueError, OSError):
             pass
     open(PIDFILE, 'w').write(str(os.getpid()))
