@@ -32,6 +32,13 @@
 
 ---
 
+## Backup（保留但不主动使用）🗄️
+
+- 旧 Shortcut 预约流程：`/imessage-task` + `/imessage-poll` + `/imessage-result` + `poll()` in server.py
+- 截图触发预约：`/sms-booking` + `doSmsBookingFromImage()` + `aiFromScreenshot()`
+
+---
+
 ## 已完成 ✅
 
 - [x] iMessage "Booking confirmed" 自动触发：建日历 + 回复客人 + Bark 通知
