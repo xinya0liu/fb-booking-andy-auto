@@ -322,7 +322,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg) {
   const ai = await aiFromSmsChat(conversationText, cfg, env);
   if (phone && !ai.mobile) ai.mobile = phone;
   if (action === 'confirmed' || action === 'confirm') {
-    await saveSmsFromAi(ai, env, cfg);
+    await saveSmsFromAi(ai, env, cfg, phone);
     const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
     const { y, m, d } = ai.date;
     const { h, min } = ai.start;
@@ -333,7 +333,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg) {
   if (action === 'updated' || action === 'update') {
     const list = await findBookingsByPhone(phone, env, cfg);
     if (!list.length) {
-      await saveSmsFromAi(ai, env, cfg);
+      await saveSmsFromAi(ai, env, cfg, phone);
       await bark(env, `⚠️ Booking updated: no existing event found`, `Created new booking for ${phone} instead.`, '');
       const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
       const { y, m, d } = ai.date; const { h, min } = ai.start;
@@ -434,7 +434,7 @@ async function doSmsBooking(conversationText, env, cfg, phone = '') {
   if (!conversationText.trim()) throw new Error('Empty conversation.');
   const ai = await aiFromSmsChat(conversationText, cfg, env);
   if (phone && !ai.mobile) ai.mobile = phone;
-  await saveSmsFromAi(ai, env, cfg);
+  await saveSmsFromAi(ai, env, cfg, phone);
 }
 
 async function doSmsBookingFromImage(imageBuffer, mediaType, env, cfg) {
@@ -443,13 +443,13 @@ async function doSmsBookingFromImage(imageBuffer, mediaType, env, cfg) {
   await saveSmsFromAi(ai, env, cfg);
 }
 
-async function saveSmsFromAi(ai, env, cfg) {
+async function saveSmsFromAi(ai, env, cfg, phone = '') {
   if (!ai.date || !ai.start) throw new Error("Couldn't find the booking date and time.");
 
   const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
   assertFuture(t, cfg);
 
-  const name = ai.name || phone;
+  const name = ai.name || phone || 'SMS Customer';
   const link = smsLink(ai.mobile);
 
   const notes = ['SMS booking'];
