@@ -449,7 +449,7 @@ async function saveSmsFromAi(ai, env, cfg) {
   const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
   assertFuture(t, cfg);
 
-  const name = ai.name || 'SMS Customer';
+  const name = ai.name || phone;
   const link = smsLink(ai.mobile);
 
   const notes = ['SMS booking'];
@@ -613,7 +613,7 @@ ${conversationText}`;
     input_schema: {
       type: 'object',
       properties: {
-        name: str("Customer's name, or empty string if unknown"),
+        name: str("Customer's real name. If the contact label looks like a date/time (e.g. '21/10 Monday 3pm'), leave empty — that is a business label, not the customer's name. Leave empty if unknown."),
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
         end: str('HH:MM in 24-hour time, or "" if not mentioned'),
