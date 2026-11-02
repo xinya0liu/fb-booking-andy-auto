@@ -535,7 +535,7 @@ Rules:
     input_schema: {
       type: 'object',
       properties: {
-        name: str("Customer's name from the conversation header, or \"\" if not visible"),
+        name: str("Customer's name from the conversation header, or empty string if not visible"),
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
         end: str('HH:MM in 24-hour time, or "" if not mentioned'),
@@ -576,7 +576,8 @@ Rules:
     throw new Error(`AI couldn't read the screenshot: ${e.message}`);
   }
 
-  const res = { name: String(o.name || '').trim() };
+  const cleanStr = s => String(s || '').trim().replace(/^["']+$/, '');
+  const res = { name: cleanStr(o.name) };
   for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'notes']) res[k] = String(o[k] || '').trim();
   const dm = String(o.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const sm = String(o.start || '').match(/^(\d{1,2}):(\d{2})$/);
@@ -612,7 +613,7 @@ ${conversationText}`;
     input_schema: {
       type: 'object',
       properties: {
-        name: str("Customer's name, or \"\" if unknown"),
+        name: str("Customer's name, or empty string if unknown"),
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
         end: str('HH:MM in 24-hour time, or "" if not mentioned'),
@@ -650,7 +651,8 @@ ${conversationText}`;
     throw new Error(`AI couldn't read the conversation: ${e.message}`);
   }
 
-  const res = { name: String(o.name || '').trim() };
+  const cleanStr = s => String(s || '').trim().replace(/^["']+$/, '');
+  const res = { name: cleanStr(o.name) };
   for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'notes']) res[k] = String(o[k] || '').trim();
   const dm = String(o.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const sm = String(o.start || '').match(/^(\d{1,2}):(\d{2})$/);
