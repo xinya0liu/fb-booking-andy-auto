@@ -124,13 +124,14 @@ def query(phone):
         print(f"query error: {e}", flush=True)
         return []
 
-def send_imessage(phone, text):
+def send_imessage(phone, text, service='iMessage'):
     e164 = to_e164(phone)
     # AppleScript can't handle json \uXXXX or \n escapes — build string manually
     parts = [p.replace('"', '" & quote & "') for p in text.split('\n')]
     as_str = '" & return & "'.join(parts)
+    svc_type = 'SMS' if service and service.upper() == 'SMS' else 'iMessage'
     script = f'''tell application "Messages"
-        set svc to 1st service whose service type = iMessage
+        set svc to 1st service whose service type = {svc_type}
         send "{as_str}" to buddy "{e164}" of svc
     end tell'''
     subprocess.run(["osascript", "-e", script], check=True, timeout=30)
@@ -143,7 +144,7 @@ def scan_keywords():
             con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
             cur = con.cursor()
             cur.execute("""
-                SELECT m.ROWID, COALESCE(m.text, ''), h.id, m.attributedBody
+                SELECT m.ROWID, COALESCE(m.text, ''), h.id, m.attributedBody, COALESCE(m.service, 'iMessage')
                 FROM message m
                 JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
                 JOIN chat_handle_join chj ON cmj.chat_id = chj.chat_id
@@ -160,7 +161,7 @@ def scan_keywords():
             """, (last_rowid,))
             rows = cur.fetchall()
             con.close()
-            for rowid, sql_text, phone, attributed_body in rows:
+            for rowid, sql_text, phone, attributed_body, service in rows:
                 last_rowid = max(last_rowid, rowid)
                 save_last_rowid(last_rowid)
                 text = decode_text(sql_text, attributed_body).lower().strip()
@@ -195,8 +196,8 @@ def scan_keywords():
                     reply = result.get("reply", "")
                     if reply:
                         try:
-                            send_imessage(phone, reply)
-                            print(f"Replied to {phone}", flush=True)
+                            send_imessage(phone, reply, service=service)
+                            print(f"Replied to {phone} via {service}", flush=True)
                         except Exception as se:
                             print(f"SEND FAILED for {phone}: {se}\nReply was: {reply}", flush=True)
         except Exception as e:
