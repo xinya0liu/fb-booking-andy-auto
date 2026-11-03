@@ -1414,7 +1414,6 @@ async function printPage(env, origin, dateParam = '') {
   h2 { font-size: 0.95em; color: #555; margin-top: 0; font-weight: normal; margin-bottom: 16px; }
   @media (max-width: 600px) {
     h2 { font-size: 3.2vw; white-space: nowrap; }
-    table { zoom: 0.25; }
     th, td { white-space: nowrap; }
     td.addr, td.veh { max-width: none; word-break: normal; }
   }
@@ -1452,6 +1451,15 @@ async function printPage(env, origin, dateParam = '') {
   }
 </style>
 <script>
+function fitTable() {
+  var t = document.querySelector('table');
+  if (!t) return;
+  t.style.zoom = '';
+  var ratio = t.parentNode.clientWidth / t.scrollWidth;
+  if (ratio < 1) t.style.zoom = ratio;
+}
+window.addEventListener('load', fitTable);
+window.addEventListener('resize', fitTable);
 function confirmPrint() {
   const n = ${bookings.length};
   const label = ${isToday ? "'Today — '" : isTomorrow ? "'Tomorrow — '" : "''"};
