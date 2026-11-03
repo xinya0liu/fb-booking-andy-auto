@@ -124,6 +124,14 @@ def query(phone):
         print(f"query error: {e}", flush=True)
         return []
 
+def clean_contact_name(name):
+    # Strip date/time prefix like "13/10 Monday 11pm" or "Monday 5pm"
+    cleaned = re.sub(
+        r'^(?:\d{1,2}/\d{1,2}\s+)?(?:mon|tue|wed|thu|fri|sat|sun)\w*\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)',
+        '', name, flags=re.IGNORECASE
+    ).strip()
+    return cleaned
+
 def get_contact_name(phone):
     digits = re.sub(r'[^\d]', '', phone)
     core = digits[-9:] if len(digits) >= 9 else digits
@@ -210,7 +218,7 @@ def scan_keywords():
                 if not msgs:
                     print(f"No messages found for {phone}", flush=True)
                     continue
-                contact_name = get_contact_name(phone)
+                contact_name = clean_contact_name(get_contact_name(phone))
                 print(f"Contact name: '{contact_name}' for {phone}", flush=True)
                 body = json.dumps({
                     "phone": phone,

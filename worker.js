@@ -592,7 +592,7 @@ Rules:
 async function aiFromSmsChat(conversationText, cfg, env, contactName = '') {
   const t = todayInTz(cfg.tz);
   const contactNameLine = contactName
-    ? `- The customer's contact label in the address book is: "${contactName}". This label may be: a real name only (e.g. "John"), a date/time label only (e.g. "31/10 Monday 5pm"), or a date/time prefix immediately followed by the real name with or without a space (e.g. "31/10 Monday 5pm John" or "13/10 Monday 11pm煤氣罐"). Strip out any leading date (DD/MM), weekday, and time (including am/pm) — everything remaining after that is the customer's real name. If nothing remains after stripping, leave the name field empty. The contact label takes priority over any name mentioned in the conversation.`
+    ? `- The customer's name from the address book is: "${contactName}". Use this as the name field. It takes priority over any name mentioned in the conversation.`
     : `- For the customer's name: use whatever name appears in the conversation, or empty string if unknown.`;
   const ownerRule = `- The business owner's name is Andy. Never use "Andy" as the customer's name.`;
   const prompt =
