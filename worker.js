@@ -1406,6 +1406,7 @@ async function printPage(env, origin, dateParam = '') {
   const todayUrl = `${baseUrl}&date=today`;
   const tomorrowUrl = baseUrl;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Andy Auto – ${dateStr}</title>
 <style>
   body { font-family: Arial, sans-serif; margin: 24px 32px; color: #111; }
