@@ -1428,14 +1428,21 @@ async function printPage(env, origin, dateParam = '') {
   td.veh  { max-width: 140px; word-break: break-word; }
   .empty { color: #888; font-style: italic; }
   .src { color: #111; font-size: 0.8em; text-align: center; white-space: nowrap; width: 40px; }
-  .toggle { display: flex; gap: 6px; margin-bottom: 14px; align-items: center; flex-wrap: nowrap; overflow-x: auto; }
+  .toggle { display: flex; gap: 6px; margin-bottom: 14px; align-items: center; flex-wrap: nowrap; overflow-x: hidden; }
   .toggle a { padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.85em; border: 1px solid #bbb; color: #333; background: #f5f5f5; white-space: nowrap; }
   .toggle a.active { background: #222; color: #fff; border-color: #222; }
-  .toggle input[type=date] { padding: 5px 6px; border-radius: 6px; border: 1px solid #bbb; font-size: 0.85em; color: #333; min-width: 0; }
+  .toggle input[type=date] { padding: 5px 6px; border-radius: 6px; border: 1px solid #bbb; font-size: 0.85em; color: #333; min-width: 0; width: 120px; }
   .toggle .other-label { font-size: 0.85em; color: #555; white-space: nowrap; }
   .equipment { background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px 16px; margin-bottom: 14px; font-weight: bold; font-size: 0.95em; }
-  .print-btn { padding: 6px 18px; border-radius: 6px; font-size: 0.9em; border: 1px solid #2a7a2a; color: #fff; background: #2a7a2a; cursor: pointer; }
+  .print-btn { padding: 6px 18px; border-radius: 6px; font-size: 0.9em; border: 1px solid #2a7a2a; color: #fff; background: #2a7a2a; cursor: pointer; white-space: nowrap; }
   .print-btn:hover { background: #1e5c1e; }
+  @media (max-width: 520px) {
+    .toggle { gap: 4px; }
+    .toggle a { padding: 5px 7px; font-size: 0.78em; }
+    .toggle .other-label { font-size: 0.78em; }
+    .toggle input[type=date] { width: 95px; font-size: 0.78em; padding: 4px 4px; }
+    .print-btn { padding: 5px 9px; font-size: 0.78em; }
+  }
   @media print {
     .toggle { display: none; }
     .print-btn { display: none; }
