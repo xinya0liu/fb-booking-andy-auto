@@ -211,6 +211,7 @@ def scan_keywords():
                     print(f"No messages found for {phone}", flush=True)
                     continue
                 contact_name = get_contact_name(phone)
+                print(f"Contact name: '{contact_name}' for {phone}", flush=True)
                 body = json.dumps({
                     "phone": phone,
                     "conversation": "\n".join(msgs),
