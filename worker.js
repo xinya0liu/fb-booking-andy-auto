@@ -1452,8 +1452,8 @@ function confirmPrint() {
   <a href="${todayUrl}"${isToday ? ' class="active"' : ''}>Today</a>
   <a href="${tomorrowUrl}"${isTomorrow ? ' class="active"' : ''}>Tomorrow</a>
   <label class="other-label" style="display:flex;align-items:center;gap:4px;">Other: <input type="date" value="${targetIso}" onchange="location.href='${baseUrl}&date='+this.value"></label>
-  <button class="print-btn" onclick="confirmPrint()">🖨 Print</button>
 </div>
+<button class="print-btn" onclick="confirmPrint()" style="margin-bottom:14px;">🖨 Print</button>
 <h2>Appointments for ${dateStr} &nbsp;·&nbsp; ${bookings.length} booking${bookings.length !== 1 ? 's' : ''}</h2>
 ${equipmentBanner}${empty}${tableHtml}
 </body></html>`;
