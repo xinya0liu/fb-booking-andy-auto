@@ -1412,7 +1412,7 @@ async function printPage(env, origin, dateParam = '') {
   body { font-family: Arial, sans-serif; margin: 24px 32px; color: #111; }
   h1 { font-size: 1.15em; margin-bottom: 2px; }
   h2 { font-size: 0.95em; color: #555; margin-top: 0; font-weight: normal; margin-bottom: 16px; }
-  table { border-collapse: collapse; width: 100%; font-size: 0.75em; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.88em; }
   th { background: #222; color: #fff; padding: 7px 10px; text-align: left; font-weight: normal; white-space: nowrap; }
   td { padding: 8px 10px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
   td.n { color: #aaa; width: 24px; font-size: 0.85em; }
