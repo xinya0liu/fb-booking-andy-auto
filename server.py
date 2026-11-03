@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sqlite3, json, datetime, time, threading, subprocess, re, os, sys
+import sqlite3, json, datetime, time, threading, subprocess, re, os, sys, glob
 import urllib.request, urllib.parse
 
 DB = "/Users/andy/Library/Messages/chat.db"
@@ -127,22 +127,31 @@ def query(phone):
 def get_contact_name(phone):
     digits = re.sub(r'[^\d]', '', phone)
     core = digits[-9:] if len(digits) >= 9 else digits
-    script = f'''tell application "Contacts"
-        activate
-        repeat with p in every person
-            repeat with ph in (phones of p)
-                if (value of ph) contains "{core}" then return name of p
-            end repeat
-        end repeat
-        return ""
-    end tell'''
-    try:
-        result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True, timeout=10)
-        name = result.stdout.strip()
-        if name and name != 'missing value':
-            return name
-    except Exception:
-        pass
+    if not core:
+        return ''
+    db_paths = glob.glob(os.path.expanduser(
+        '~/Library/Application Support/AddressBook/Sources/*/AddressBook-v22.abcddb'
+    ))
+    for db_path in db_paths:
+        try:
+            con = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
+            cur = con.cursor()
+            cur.execute('''
+                SELECT r.ZFIRSTNAME, r.ZLASTNAME, r.ZNAME, p.ZFULLNUMBER
+                FROM ZABCDPHONENUMBER p
+                JOIN ZABCDRECORD r ON p.ZOWNER = r.Z_PK
+            ''')
+            for first, last, zname, ph in cur.fetchall():
+                ph_digits = re.sub(r'[^\d]', '', ph or '')
+                if core in ph_digits:
+                    parts = [x for x in [first, last] if x]
+                    name = ' '.join(parts) or zname or ''
+                    if name:
+                        con.close()
+                        return name
+            con.close()
+        except Exception:
+            pass
     return ''
 
 def send_imessage(phone, text, service='iMessage'):
