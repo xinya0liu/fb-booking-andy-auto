@@ -1438,7 +1438,7 @@ async function printPage(env, origin, dateParam = '') {
   }
   @media (max-width: 600px) {
     h2 { font-size: 3.2vw; white-space: nowrap; }
-    table { font-size: 0.2em; }
+    table { font-size: 0.18em; }
     th, td { padding: 4px 5px; }
   }
   @media print {
