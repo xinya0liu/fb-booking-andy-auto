@@ -128,6 +128,7 @@ def get_contact_name(phone):
     digits = re.sub(r'[^\d]', '', phone)
     core = digits[-9:] if len(digits) >= 9 else digits
     script = f'''tell application "Contacts"
+        activate
         repeat with p in every person
             repeat with ph in (phones of p)
                 if (value of ph) contains "{core}" then return name of p
