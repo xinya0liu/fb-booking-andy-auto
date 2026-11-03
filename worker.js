@@ -1415,8 +1415,10 @@ async function printPage(env, origin, dateParam = '') {
   .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   @media (max-width: 600px) {
     h2 { font-size: 3.2vw; white-space: nowrap; }
-    table { font-size: 2.6vw; }
-    td, th { white-space: nowrap; padding: 4px 4px; }
+    .table-wrap { overflow-x: hidden; }
+    table { font-size: 1.8vw; }
+    th { padding: 4px 2px; white-space: nowrap; }
+    td { padding: 3px 2px; white-space: nowrap; }
     td.addr, td.veh { max-width: none; word-break: normal; }
   }
   table { border-collapse: collapse; width: 100%; font-size: 0.88em; }
