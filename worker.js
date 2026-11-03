@@ -1411,7 +1411,7 @@ async function printPage(env, origin, dateParam = '') {
 <style>
   body { font-family: Arial, sans-serif; margin: 24px 32px; color: #111; }
   h1 { font-size: 1.15em; margin-bottom: 2px; }
-  h2 { font-size: 0.95em; color: #555; margin-top: 0; font-weight: normal; margin-bottom: 16px; }
+  h2 { font-size: 0.95em; color: #555; margin-top: 0; font-weight: normal; margin-bottom: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   table { border-collapse: collapse; width: 100%; font-size: 0.88em; }
   th { background: #222; color: #fff; padding: 7px 10px; text-align: left; font-weight: normal; white-space: nowrap; }
   td { padding: 8px 10px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
@@ -1421,10 +1421,11 @@ async function printPage(env, origin, dateParam = '') {
   td.veh  { max-width: 140px; word-break: break-word; }
   .empty { color: #888; font-style: italic; }
   .src { color: #111; font-size: 0.8em; text-align: center; white-space: nowrap; width: 40px; }
-  .toggle { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
-  .toggle a { padding: 6px 18px; border-radius: 6px; text-decoration: none; font-size: 0.9em; border: 1px solid #bbb; color: #333; background: #f5f5f5; }
+  .toggle { display: flex; gap: 6px; margin-bottom: 14px; align-items: center; flex-wrap: nowrap; overflow-x: auto; }
+  .toggle a { padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.85em; border: 1px solid #bbb; color: #333; background: #f5f5f5; white-space: nowrap; }
   .toggle a.active { background: #222; color: #fff; border-color: #222; }
-  .toggle input[type=date] { padding: 5px 10px; border-radius: 6px; border: 1px solid #bbb; font-size: 0.9em; color: #333; }
+  .toggle input[type=date] { padding: 5px 6px; border-radius: 6px; border: 1px solid #bbb; font-size: 0.85em; color: #333; min-width: 0; }
+  .toggle .other-label { font-size: 0.85em; color: #555; white-space: nowrap; }
   .equipment { background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px 16px; margin-bottom: 14px; font-weight: bold; font-size: 0.95em; }
   .print-btn { padding: 6px 18px; border-radius: 6px; font-size: 0.9em; border: 1px solid #2a7a2a; color: #fff; background: #2a7a2a; cursor: pointer; }
   .print-btn:hover { background: #1e5c1e; }
@@ -1450,7 +1451,7 @@ function confirmPrint() {
 <div class="toggle">
   <a href="${todayUrl}"${isToday ? ' class="active"' : ''}>Today</a>
   <a href="${tomorrowUrl}"${isTomorrow ? ' class="active"' : ''}>Tomorrow</a>
-  <label style="font-size:0.9em;color:#555;display:flex;align-items:center;gap:6px;">Other date: <input type="date" value="${targetIso}" onchange="location.href='${baseUrl}&date='+this.value"></label>
+  <label class="other-label" style="display:flex;align-items:center;gap:4px;">Other: <input type="date" value="${targetIso}" onchange="location.href='${baseUrl}&date='+this.value"></label>
   <button class="print-btn" onclick="confirmPrint()">🖨 Print</button>
 </div>
 <h2>Appointments for ${dateStr} &nbsp;·&nbsp; ${bookings.length} booking${bookings.length !== 1 ? 's' : ''}</h2>
