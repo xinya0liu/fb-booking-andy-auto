@@ -1412,11 +1412,6 @@ async function printPage(env, origin, dateParam = '') {
   body { font-family: Arial, sans-serif; margin: 24px 32px; color: #111; }
   h1 { font-size: 1.15em; margin-bottom: 2px; }
   h2 { font-size: 0.95em; color: #555; margin-top: 0; font-weight: normal; margin-bottom: 16px; }
-  @media (max-width: 600px) {
-    h2 { font-size: 3.2vw; white-space: nowrap; }
-    table { font-size: 0.2em; }
-    th, td { padding: 4px 5px; }
-  }
   table { border-collapse: collapse; width: 100%; font-size: 0.75em; }
   th { background: #222; color: #fff; padding: 7px 10px; text-align: left; font-weight: normal; white-space: nowrap; }
   td { padding: 8px 10px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
@@ -1440,6 +1435,11 @@ async function printPage(env, origin, dateParam = '') {
     .toggle .other-label { font-size: 0.72em; }
     .toggle input[type=date] { width: 72px; font-size: 0.72em; padding: 4px 3px; }
     .print-btn { padding: 4px 7px; font-size: 0.72em; margin-left: auto; }
+  }
+  @media (max-width: 600px) {
+    h2 { font-size: 3.2vw; white-space: nowrap; }
+    table { font-size: 0.2em; }
+    th, td { padding: 4px 5px; }
   }
   @media print {
     .toggle { display: none; }
