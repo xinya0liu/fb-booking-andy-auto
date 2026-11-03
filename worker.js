@@ -1373,15 +1373,15 @@ async function printPage(env, origin, dateParam = '') {
     const bg = isSms ? '#e0e0e0' : '#fff';
     const source = isSms ? 'SMS' : 'FB';
     return `<tr style="background:${bg}">
-      <td class="n">${i + 1}</td>
-      <td class="src">${source}</td>
+      <td class="n col-hide">${i + 1}</td>
+      <td class="src col-hide">${source}</td>
       <td class="time">${clock}</td>
       <td>${service}</td>
       <td>${price}</td>
       <td class="veh">${vehicle}</td>
       <td class="addr">${e.location || ''}</td>
       <td>${e.name || ''}</td>
-      <td>${mobile}</td>
+      <td class="col-hide">${mobile}</td>
     </tr>`;
   }).join('');
 
@@ -1395,8 +1395,8 @@ async function printPage(env, origin, dateParam = '') {
   const tableHtml = bookings.length === 0 ? '' : `
   <div class="table-wrap"><table>
     <thead><tr>
-      <th>#</th><th>Source</th><th>Time</th><th>Service</th><th>Price</th>
-      <th>Vehicle</th><th>Address</th><th>Customer</th><th>Mobile</th>
+      <th class="col-hide">#</th><th class="col-hide">Source</th><th>Time</th><th>Service</th><th>Price</th>
+      <th>Vehicle</th><th>Address</th><th>Customer</th><th class="col-hide">Mobile</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
@@ -1416,8 +1416,9 @@ async function printPage(env, origin, dateParam = '') {
   @media (max-width: 600px) {
     h2 { font-size: 3.2vw; white-space: nowrap; }
     table { font-size: 2.6vw; }
-    td, th { white-space: nowrap; padding: 5px 5px; }
+    td, th { white-space: nowrap; padding: 4px 4px; }
     td.addr, td.veh { max-width: none; word-break: normal; }
+    .col-hide { display: none; }
   }
   table { border-collapse: collapse; width: 100%; font-size: 0.88em; }
   th { background: #222; color: #fff; padding: 7px 10px; text-align: left; font-weight: normal; white-space: nowrap; }
