@@ -1373,15 +1373,15 @@ async function printPage(env, origin, dateParam = '') {
     const bg = isSms ? '#e0e0e0' : '#fff';
     const source = isSms ? 'SMS' : 'FB';
     return `<tr style="background:${bg}">
-      <td class="n col-hide">${i + 1}</td>
-      <td class="src col-hide">${source}</td>
+      <td class="n">${i + 1}</td>
+      <td class="src">${source}</td>
       <td class="time">${clock}</td>
       <td>${service}</td>
       <td>${price}</td>
       <td class="veh">${vehicle}</td>
       <td class="addr">${e.location || ''}</td>
       <td>${e.name || ''}</td>
-      <td class="col-hide">${mobile}</td>
+      <td>${mobile}</td>
     </tr>`;
   }).join('');
 
@@ -1395,8 +1395,8 @@ async function printPage(env, origin, dateParam = '') {
   const tableHtml = bookings.length === 0 ? '' : `
   <div class="table-wrap"><table>
     <thead><tr>
-      <th class="col-hide">#</th><th class="col-hide">Source</th><th>Time</th><th>Service</th><th>Price</th>
-      <th>Vehicle</th><th>Address</th><th>Customer</th><th class="col-hide">Mobile</th>
+      <th>#</th><th>Source</th><th>Time</th><th>Service</th><th>Price</th>
+      <th>Vehicle</th><th>Address</th><th>Customer</th><th>Mobile</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
@@ -1418,7 +1418,6 @@ async function printPage(env, origin, dateParam = '') {
     table { font-size: 2.6vw; }
     td, th { white-space: nowrap; padding: 4px 4px; }
     td.addr, td.veh { max-width: none; word-break: normal; }
-    .col-hide { display: none; }
   }
   table { border-collapse: collapse; width: 100%; font-size: 0.88em; }
   th { background: #222; color: #fff; padding: 7px 10px; text-align: left; font-weight: normal; white-space: nowrap; }
@@ -1460,8 +1459,8 @@ function confirmPrint() {
   <a href="${todayUrl}"${isToday ? ' class="active"' : ''}>Today</a>
   <a href="${tomorrowUrl}"${isTomorrow ? ' class="active"' : ''}>Tomorrow</a>
   <label class="other-label" style="display:flex;align-items:center;gap:4px;">Other: <input type="date" value="${targetIso}" onchange="location.href='${baseUrl}&date='+this.value"></label>
+  <button class="print-btn" onclick="confirmPrint()">🖨 Print</button>
 </div>
-<button class="print-btn" onclick="confirmPrint()" style="margin-bottom:14px;">🖨 Print</button>
 <h2>Appointments for ${dateStr} &nbsp;·&nbsp; ${bookings.length} booking${bookings.length !== 1 ? 's' : ''}</h2>
 ${equipmentBanner}${empty}${tableHtml}
 </body></html>`;
