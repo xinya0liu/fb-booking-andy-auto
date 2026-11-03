@@ -1329,6 +1329,10 @@ function parseSummaryFields(summary) {
 async function printPage(env, origin, dateParam = '') {
   const cfg = config(env);
   const today = todayInTz(cfg.tz);
+  if (!dateParam) {
+    const nowInTz = new Date(new Date().toLocaleString('en-US', { timeZone: cfg.tz }));
+    dateParam = nowInTz.getHours() < 16 ? 'today' : '';
+  }
   let target;
   const p = dateParam.toLowerCase();
   if (p === 'today') {
@@ -1421,20 +1425,31 @@ async function printPage(env, origin, dateParam = '') {
   .toggle a.active { background: #222; color: #fff; border-color: #222; }
   .toggle input[type=date] { padding: 5px 10px; border-radius: 6px; border: 1px solid #bbb; font-size: 0.9em; color: #333; }
   .equipment { background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px 16px; margin-bottom: 14px; font-weight: bold; font-size: 0.95em; }
+  .print-btn { padding: 6px 18px; border-radius: 6px; font-size: 0.9em; border: 1px solid #2a7a2a; color: #fff; background: #2a7a2a; cursor: pointer; }
+  .print-btn:hover { background: #1e5c1e; }
   @media print {
     .toggle { display: none; }
+    .print-btn { display: none; }
     tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     @page { size: A4 landscape; margin: 15mm; }
     body { margin: 0; }
     th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>
+<script>
+function confirmPrint() {
+  const n = ${bookings.length};
+  const msg = 'Print ${dateStr}\\n' + n + ' booking' + (n !== 1 ? 's' : '') + '\\n\\nConfirm?';
+  if (confirm(msg)) window.print();
+}
+</script>
 </head><body>
 <h1>Andy Auto AC Regas</h1>
 <div class="toggle">
   <a href="${todayUrl}"${isToday ? ' class="active"' : ''}>Today</a>
   <a href="${tomorrowUrl}"${isTomorrow ? ' class="active"' : ''}>Tomorrow</a>
   <label style="font-size:0.9em;color:#555;display:flex;align-items:center;gap:6px;">Other date: <input type="date" value="${targetIso}" onchange="location.href='${baseUrl}&date='+this.value"></label>
+  <button class="print-btn" onclick="confirmPrint()">🖨 Print</button>
 </div>
 <h2>Appointments for ${dateStr} &nbsp;·&nbsp; ${bookings.length} booking${bookings.length !== 1 ? 's' : ''}</h2>
 ${equipmentBanner}${empty}${tableHtml}
