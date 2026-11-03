@@ -1414,7 +1414,7 @@ async function printPage(env, origin, dateParam = '') {
   h2 { font-size: 0.95em; color: #555; margin-top: 0; font-weight: normal; margin-bottom: 16px; }
   @media (max-width: 600px) {
     h2 { font-size: 3.2vw; white-space: nowrap; }
-    table { zoom: 0.47; }
+    table { zoom: 0.25; }
     th, td { white-space: nowrap; }
     td.addr, td.veh { max-width: none; word-break: normal; }
   }
