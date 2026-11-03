@@ -338,8 +338,8 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
       await bark(env, `⚠️ Booking updated: no existing event found`, `Created new booking for ${phone} instead.`, '');
       const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
       const { y, m, d } = ai.date; const { h, min } = ai.start;
-      const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
-      return `✅ Andy Auto AC Regas\nTime: ${d}/${m} ${WD_LONG[dowOf({ y, m, d })]}, ${clock}\nSee you then!`;
+      const clock = `${h % 12 || 12}${min ? ':' + pad(min) : ''}${h < 12 ? 'am' : 'pm'}`;
+      return `✅ Andy Auto AC Regas\nTime: ${d}/${m} ${WD_LONG[dowOf({ y, m, d })]} ${clock}\nSee you then!`;
     }
     const target = list[0];
     const old = localParts(target.startMs, cfg.tz);
@@ -930,8 +930,8 @@ ${transcript}`;
 function customerMessage(d, w, env, header) {
   const { y, m, d: day } = w.date;
   const h = w.start.h, min = w.start.min;
-  const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
-  const when = `${WD_LONG[dowOf({ y, m, d: day })]} ${day}/${m}, ${clock}`;
+  const clock = `${h % 12 || 12}${min ? ':' + pad(min) : ''}${h < 12 ? 'am' : 'pm'}`;
+  const when = `${day}/${m} ${WD_LONG[dowOf({ y, m, d: day })]} ${clock}`;
   const lines = [header];
   if (d.service) lines.push(`Service: ${d.service}`);
   if (d.price) lines.push(`Price: ${d.price}`);
@@ -1278,8 +1278,8 @@ async function handleScheduled(cron, env) {
 
 function buildReminderMessage(e, cfg, env) {
   const p = localParts(e.startMs, cfg.tz);
-  const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
-  const when = `${WD_LONG[dowOf(p)]} ${p.d}/${p.m}, ${clock}`;
+  const clock = `${p.h % 12 || 12}${p.min ? ':' + pad(p.min) : ''}${p.h < 12 ? 'am' : 'pm'}`;
+  const when = `${p.d}/${p.m} ${WD_LONG[dowOf(p)]} ${clock}`;
   const lines = ['Hi! Just a reminder of your booking tomorrow with Andy Auto AC Regas:'];
   lines.push(`Time: ${when}`);
   if (e.location) lines.push(`Address: ${e.location}`);
