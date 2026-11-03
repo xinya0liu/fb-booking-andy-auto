@@ -491,7 +491,7 @@ async function saveSmsFromAi(ai, env, cfg, phone = '') {
     ai.address, ai.mobile && `📱 ${ai.mobile}`, ai.vehicle && `🚗 ${ai.vehicle}`, ai.notes && `📝 ${ai.notes}`,
   ].filter(Boolean);
   if (overlaps.length) lines.push(overlapLine(overlaps).trim());
-  await barkBooking(env, `📅 SMS Booking added: ${name}`, lines.join('\n'), barkTimeLink(t.label, env), t.label);
+  await barkBooking(env, `📅 SMS Booking added: ${name}`, lines.join('\n'), smsLink(ai.mobile || phone), t.label);
 }
 
 function arrayBufferToBase64(buffer) {
