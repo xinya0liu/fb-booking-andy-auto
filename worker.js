@@ -405,7 +405,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
       if (e.status === 412) throw new Error('The event was changed on another device. Please send the update again.');
       throw e;
     }
-    await barkBooking(env, `🔄 Booking updated: ${target.name || 'SMS Customer'}`, replyLines.join('\n'), smsLink(phone), '');
+    await barkBooking(env, `🔄 Booking updated: ${target.name || 'SMS Customer'}`, replyLines.join('\n'), '', '');
     return `🔄 Andy Auto AC Regas\n${replyLines.join('\n')}\nSee you then!`;
   }
 
@@ -424,7 +424,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
     }
     const p = localParts(target.startMs, cfg.tz);
     const more = list.length > 1 ? '\nℹ️ This customer has other upcoming bookings.' : '';
-    await barkBooking(env, `❌ Booking cancelled: ${target.name || 'SMS Customer'}`, [p.label, target.service].filter(Boolean).join(' · ') + more, smsLink(phone), p.label);
+    await barkBooking(env, `❌ Booking cancelled: ${target.name || 'SMS Customer'}`, [p.label, target.service].filter(Boolean).join(' · ') + more, '', '');
     return `Feel free to rebook anytime!`;
   }
 
@@ -491,7 +491,7 @@ async function saveSmsFromAi(ai, env, cfg, phone = '') {
     ai.address, ai.mobile && `📱 ${ai.mobile}`, ai.vehicle && `🚗 ${ai.vehicle}`, ai.notes && `📝 ${ai.notes}`,
   ].filter(Boolean);
   if (overlaps.length) lines.push(overlapLine(overlaps).trim());
-  await barkBooking(env, `📅 SMS Booking added: ${name}`, lines.join('\n'), smsLink(ai.mobile || phone), t.label);
+  await barkBooking(env, `📅 SMS Booking added: ${name}`, lines.join('\n'), '', t.label);
 }
 
 function arrayBufferToBase64(buffer) {
