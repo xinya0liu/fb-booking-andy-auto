@@ -1439,7 +1439,8 @@ async function printPage(env, origin, dateParam = '') {
 <script>
 function confirmPrint() {
   const n = ${bookings.length};
-  const msg = 'Print ${dateStr}\\n' + n + ' booking' + (n !== 1 ? 's' : '') + '\\n\\nConfirm?';
+  const label = ${isToday ? "'Today — '" : isTomorrow ? "'Tomorrow — '" : "''"};
+  const msg = 'Print ' + label + '${dateStr}\\n' + n + ' booking' + (n !== 1 ? 's' : '') + '\\n\\nConfirm?';
   if (confirm(msg)) window.print();
 }
 </script>
