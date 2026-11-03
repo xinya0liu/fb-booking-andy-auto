@@ -1440,9 +1440,20 @@ async function printPage(env, origin, dateParam = '') {
     h2 { font-size: 3.2vw; white-space: nowrap; }
     table { zoom: 0.4; }
   }
+  #print-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:999; align-items:center; justify-content:center; }
+  #print-modal.open { display:flex; }
+  #print-modal-box { background:#fff; border-radius:12px; padding:24px 28px; max-width:320px; width:90%; text-align:center; }
+  #print-modal-box .modal-date { font-size:1.25em; font-weight:bold; margin:8px 0 4px; }
+  #print-modal-box .modal-count { color:#555; margin-bottom:20px; }
+  #print-modal-box .modal-hint { font-size:0.8em; color:#888; margin-bottom:20px; }
+  #print-modal-box .modal-btns { display:flex; gap:10px; justify-content:center; }
+  #print-modal-box .modal-btns button { padding:9px 22px; border-radius:8px; border:none; font-size:1em; cursor:pointer; }
+  #print-modal-box .modal-btns .btn-print { background:#2a7a2a; color:#fff; }
+  #print-modal-box .modal-btns .btn-cancel { background:#eee; color:#333; }
   @media print {
     .toggle { display: none; }
     .print-btn { display: none; }
+    #print-modal { display: none !important; }
     tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     @page { size: A4 landscape; margin: 15mm; }
     body { margin: 0; }
@@ -1451,10 +1462,14 @@ async function printPage(env, origin, dateParam = '') {
 </style>
 <script>
 function confirmPrint() {
-  const n = ${bookings.length};
-  const label = ${isToday ? "'Today — '" : isTomorrow ? "'Tomorrow — '" : "''"};
-  const msg = 'Print ' + label + '${dateStr}\\n' + n + ' booking' + (n !== 1 ? 's' : '') + '\\n\\nSelect Landscape in print settings';
-  if (confirm(msg)) window.print();
+  document.getElementById('print-modal').classList.add('open');
+}
+function doPrint() {
+  document.getElementById('print-modal').classList.remove('open');
+  window.print();
+}
+function cancelPrint() {
+  document.getElementById('print-modal').classList.remove('open');
 }
 </script>
 </head><body>
@@ -1467,6 +1482,18 @@ function confirmPrint() {
 </div>
 <h2>Appointments for ${dateStr} &nbsp;·&nbsp; ${bookings.length} booking${bookings.length !== 1 ? 's' : ''}</h2>
 ${equipmentBanner}${empty}${tableHtml}
+<div id="print-modal">
+  <div id="print-modal-box">
+    <div>Print appointments for</div>
+    <div class="modal-date">${isToday ? 'Today — ' : isTomorrow ? 'Tomorrow — ' : ''}${dateStr}</div>
+    <div class="modal-count">${bookings.length} booking${bookings.length !== 1 ? 's' : ''}</div>
+    <div class="modal-hint">Select Landscape in print settings</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="cancelPrint()">Cancel</button>
+      <button class="btn-print" onclick="doPrint()">🖨 Print</button>
+    </div>
+  </div>
+</div>
 </body></html>`;
 
   return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8' } });
