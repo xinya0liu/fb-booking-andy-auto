@@ -190,9 +190,9 @@ def scan_keywords():
                 WHERE m.is_from_me = 1
                   AND m.ROWID > ?
                   AND (
-                    lower(trim(COALESCE(m.text, ''))) LIKE 'booking confirmed%'
-                    OR lower(trim(COALESCE(m.text, ''))) LIKE 'booking updated%'
-                    OR lower(trim(COALESCE(m.text, ''))) LIKE 'booking cancelled%'
+                    lower(COALESCE(m.text, '')) LIKE '%booking confirmed%'
+                    OR lower(COALESCE(m.text, '')) LIKE '%booking updated%'
+                    OR lower(COALESCE(m.text, '')) LIKE '%booking cancelled%'
                     OR ((m.text IS NULL OR m.text = '') AND m.attributedBody IS NOT NULL)
                   )
                 ORDER BY m.ROWID ASC
