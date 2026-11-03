@@ -124,6 +124,26 @@ def query(phone):
         print(f"query error: {e}", flush=True)
         return []
 
+def get_contact_name(phone):
+    digits = re.sub(r'[^\d]', '', phone)
+    core = digits[-9:] if len(digits) >= 9 else digits
+    script = f'''tell application "Contacts"
+        repeat with p in every person
+            repeat with ph in (phones of p)
+                if (value of ph) contains "{core}" then return name of p
+            end repeat
+        end repeat
+        return ""
+    end tell'''
+    try:
+        result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True, timeout=10)
+        name = result.stdout.strip()
+        if name and name != 'missing value':
+            return name
+    except Exception:
+        pass
+    return ''
+
 def send_imessage(phone, text, service='iMessage'):
     e164 = to_e164(phone)
     # AppleScript can't handle json \uXXXX or \n escapes — build string manually
@@ -180,10 +200,12 @@ def scan_keywords():
                 if not msgs:
                     print(f"No messages found for {phone}", flush=True)
                     continue
+                contact_name = get_contact_name(phone)
                 body = json.dumps({
                     "phone": phone,
                     "conversation": "\n".join(msgs),
                     "action": action,
+                    "contact_name": contact_name,
                 }).encode()
                 req = urllib.request.Request(
                     f"{WORKER}/imessage-keyword?secret={s}",
