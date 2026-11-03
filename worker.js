@@ -1465,8 +1465,8 @@ function confirmPrint() {
   document.getElementById('print-modal').classList.add('open');
 }
 function doPrint() {
-  document.getElementById('print-modal').classList.remove('open');
   window.print();
+  document.getElementById('print-modal').classList.remove('open');
 }
 function cancelPrint() {
   document.getElementById('print-modal').classList.remove('open');
