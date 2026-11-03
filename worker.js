@@ -1434,14 +1434,14 @@ async function printPage(env, origin, dateParam = '') {
   .toggle input[type=date] { padding: 5px 6px; border-radius: 6px; border: 1px solid #bbb; font-size: 0.85em; color: #333; min-width: 0; width: 120px; }
   .toggle .other-label { font-size: 0.85em; color: #555; white-space: nowrap; }
   .equipment { background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px 16px; margin-bottom: 14px; font-weight: bold; font-size: 0.95em; }
-  .print-btn { padding: 6px 18px; border-radius: 6px; font-size: 0.9em; border: 1px solid #2a7a2a; color: #fff; background: #2a7a2a; cursor: pointer; white-space: nowrap; }
+  .print-btn { padding: 6px 18px; border-radius: 6px; font-size: 0.9em; border: 1px solid #2a7a2a; color: #fff; background: #2a7a2a; cursor: pointer; white-space: nowrap; margin-left: auto; }
   .print-btn:hover { background: #1e5c1e; }
   @media (max-width: 520px) {
     .toggle { gap: 3px; }
     .toggle a { padding: 4px 5px; font-size: 0.72em; }
     .toggle .other-label { font-size: 0.72em; }
     .toggle input[type=date] { width: 72px; font-size: 0.72em; padding: 4px 3px; }
-    .print-btn { padding: 4px 7px; font-size: 0.72em; margin-left: 6px; }
+    .print-btn { padding: 4px 7px; font-size: 0.72em; margin-left: auto; }
   }
   @media print {
     .toggle { display: none; }
