@@ -1438,7 +1438,9 @@ async function printPage(env, origin, dateParam = '') {
   }
   @media (max-width: 600px) {
     h2 { font-size: 3.2vw; white-space: nowrap; }
-    table { zoom: 0.4; }
+    table { width: 250%; zoom: 0.4; }
+    th, td { white-space: nowrap; }
+    td.addr, td.veh { max-width: none; word-break: normal; }
   }
   @media print {
     .toggle { display: none; }
