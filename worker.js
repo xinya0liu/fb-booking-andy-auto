@@ -1404,7 +1404,7 @@ async function printPage(env, origin, dateParam = '') {
   const secret = encodeURIComponent(env.VERIFY_TOKEN || '');
   const baseUrl = `${origin}/print?secret=${secret}`;
   const todayUrl = `${baseUrl}&date=today`;
-  const tomorrowUrl = baseUrl;
+  const tomorrowUrl = `${baseUrl}&date=tomorrow`;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Andy Auto – ${dateStr}</title>
@@ -1437,11 +1437,11 @@ async function printPage(env, origin, dateParam = '') {
   .print-btn { padding: 6px 18px; border-radius: 6px; font-size: 0.9em; border: 1px solid #2a7a2a; color: #fff; background: #2a7a2a; cursor: pointer; white-space: nowrap; }
   .print-btn:hover { background: #1e5c1e; }
   @media (max-width: 520px) {
-    .toggle { gap: 4px; }
-    .toggle a { padding: 5px 7px; font-size: 0.78em; }
-    .toggle .other-label { font-size: 0.78em; }
-    .toggle input[type=date] { width: 95px; font-size: 0.78em; padding: 4px 4px; }
-    .print-btn { padding: 5px 9px; font-size: 0.78em; }
+    .toggle { gap: 3px; }
+    .toggle a { padding: 4px 5px; font-size: 0.72em; }
+    .toggle .other-label { font-size: 0.72em; }
+    .toggle input[type=date] { width: 85px; font-size: 0.72em; padding: 4px 3px; }
+    .print-btn { padding: 4px 7px; font-size: 0.72em; }
   }
   @media print {
     .toggle { display: none; }
