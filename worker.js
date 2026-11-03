@@ -1438,8 +1438,7 @@ async function printPage(env, origin, dateParam = '') {
   }
   @media (max-width: 600px) {
     h2 { font-size: 3.2vw; white-space: nowrap; }
-    table { font-size: 0.18em; }
-    th, td { padding: 4px 5px; }
+    table { width: auto; }
   }
   @media print {
     .toggle { display: none; }
@@ -1451,6 +1450,16 @@ async function printPage(env, origin, dateParam = '') {
   }
 </style>
 <script>
+function fitTable() {
+  if (window.innerWidth > 600) return;
+  var t = document.querySelector('table');
+  if (!t) return;
+  t.style.zoom = '';
+  var ratio = document.documentElement.clientWidth / t.offsetWidth;
+  if (ratio < 1) t.style.zoom = ratio;
+}
+window.addEventListener('DOMContentLoaded', fitTable);
+window.addEventListener('resize', fitTable);
 function confirmPrint() {
   const n = ${bookings.length};
   const label = ${isToday ? "'Today — '" : isTomorrow ? "'Tomorrow — '" : "''"};
