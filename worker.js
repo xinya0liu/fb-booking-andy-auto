@@ -1440,8 +1440,8 @@ async function printPage(env, origin, dateParam = '') {
     .toggle { gap: 3px; }
     .toggle a { padding: 4px 5px; font-size: 0.72em; }
     .toggle .other-label { font-size: 0.72em; }
-    .toggle input[type=date] { width: 85px; font-size: 0.72em; padding: 4px 3px; }
-    .print-btn { padding: 4px 7px; font-size: 0.72em; }
+    .toggle input[type=date] { width: 72px; font-size: 0.72em; padding: 4px 3px; }
+    .print-btn { padding: 4px 7px; font-size: 0.72em; margin-left: 6px; }
   }
   @media print {
     .toggle { display: none; }
