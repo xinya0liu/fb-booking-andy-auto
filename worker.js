@@ -1393,13 +1393,13 @@ async function printPage(env, origin, dateParam = '') {
     ? `<p class="empty">No bookings for ${isToday ? 'today' : isTomorrow ? 'tomorrow' : dateStr}.</p>` : '';
 
   const tableHtml = bookings.length === 0 ? '' : `
-  <div class="table-wrap"><table>
+  <table>
     <thead><tr>
       <th>#</th><th>Source</th><th>Time</th><th>Service</th><th>Price</th>
       <th>Vehicle</th><th>Address</th><th>Customer</th><th>Mobile</th>
     </tr></thead>
     <tbody>${rows}</tbody>
-  </table></div>`;
+  </table>`;
 
   const secret = encodeURIComponent(env.VERIFY_TOKEN || '');
   const baseUrl = `${origin}/print?secret=${secret}`;
@@ -1412,7 +1412,6 @@ async function printPage(env, origin, dateParam = '') {
   body { font-family: Arial, sans-serif; margin: 24px 32px; color: #111; }
   h1 { font-size: 1.15em; margin-bottom: 2px; }
   h2 { font-size: 0.95em; color: #555; margin-top: 0; font-weight: normal; margin-bottom: 16px; }
-  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   @media (max-width: 600px) {
     h2 { font-size: 3.2vw; white-space: nowrap; }
   }
