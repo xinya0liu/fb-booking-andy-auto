@@ -327,8 +327,8 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
     const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
     const { y, m, d } = ai.date;
     const { h, min } = ai.start;
-    const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
-    const when = `${d}/${m} ${WD_LONG[dowOf({ y, m, d })]}, ${clock}`;
+    const clock = `${h % 12 || 12}${min ? ':' + pad(min) : ''}${h < 12 ? 'am' : 'pm'}`;
+    const when = `${d}/${m} ${WD_LONG[dowOf({ y, m, d })]} ${clock}`;
     return `✅ Andy Auto AC Regas\nTime: ${when}\nSee you then!`;
   }
   if (action === 'updated' || action === 'update') {
@@ -362,8 +362,8 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
         changes.DTEND = [`DTEND:${utcStamp(zonedToUtc(t.end, cfg.tz))}`];
         changes.DURATION = null;
         const { y, m, d } = ai.date; const { h, min } = ai.start;
-        const clock = `${h % 12 || 12}:${pad(min)}${h < 12 ? 'am' : 'pm'}`;
-        const label = `${d}/${m} ${WD_LONG[dowOf({ y, m, d })]}, ${clock}`;
+        const clock = `${h % 12 || 12}${min ? ':' + pad(min) : ''}${h < 12 ? 'am' : 'pm'}`;
+        const label = `${d}/${m} ${WD_LONG[dowOf({ y, m, d })]} ${clock}`;
         replyLines.push(`Updated time: ${label}`);
         noteFields.push(`Time: ${t.label}`);
       }
@@ -592,8 +592,9 @@ Rules:
 async function aiFromSmsChat(conversationText, cfg, env, contactName = '') {
   const t = todayInTz(cfg.tz);
   const contactNameLine = contactName
-    ? `- The customer's contact label in the address book is: "${contactName}". This may be a real name (e.g. "John"), a date/time label (e.g. "31/10 Monday 5pm"), or a combination (e.g. "31/10 Monday 5pm John"). Extract only the real name part — ignore any date, weekday, or time portions. If only date/time with no name, leave the name field empty.`
+    ? `- The customer's contact label in the address book is: "${contactName}". This may be a real name (e.g. "John"), a date/time label (e.g. "31/10 Monday 5pm"), or a combination (e.g. "31/10 Monday 5pm John"). Extract only the real name part — ignore any date, weekday, or time portions. If only date/time with no name, leave the name field empty. The contact label takes priority over any name mentioned in the conversation.`
     : `- For the customer's name: use whatever name appears in the conversation, or empty string if unknown.`;
+  const ownerRule = `- The business owner's name is Andy. Never use "Andy" as the customer's name.`;
   const prompt =
 `Today is ${WD_LONG[dowOf(t)]} ${t.y}-${pad(t.m)}-${pad(t.d)}, time zone ${cfg.tz}.
 Below is an SMS or phone conversation between a mobile car air-conditioning business and a customer.
@@ -603,6 +604,7 @@ Rules:
 - Dates are Australian (day/month). Words like "tomorrow" or "Sunday" are relative to today's date unless a specific date is given.
 - Use the final agreed values (last price quoted, time the customer accepted).
 - The business's own phone number is 0478 701 289. Never use it as the customer's mobile.
+${ownerRule}
 ${contactNameLine}
 - Leave a field as "" if not mentioned. Do not guess or invent anything.
 - notes: only info the technician needs on-site that is NOT captured in other fields — e.g. gate code, parking instructions, specific symptom, part needed. IMPORTANT EXCEPTION: if the customer is coming to Andy's location (not a mobile visit to the customer), always write "Customer coming to us". Do NOT include: customer name, service breakdown, price reasoning, "mobile service at home", "time customer accepted", or any AI reasoning. Leave "" if nothing genuinely useful.
