@@ -1417,6 +1417,7 @@ async function printPage(env, origin, dateParam = '') {
     h2 { font-size: 3.2vw; white-space: nowrap; }
     table { font-size: 2.6vw; }
     td, th { white-space: nowrap; padding: 5px 5px; }
+    td.addr, td.veh { max-width: none; word-break: normal; }
   }
   table { border-collapse: collapse; width: 100%; font-size: 0.88em; }
   th { background: #222; color: #fff; padding: 7px 10px; text-align: left; font-weight: normal; white-space: nowrap; }
