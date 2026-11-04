@@ -1454,6 +1454,7 @@ async function printPage(env, origin, dateParam = '') {
     .toggle { display: none; }
     .print-btn { display: none; }
     #print-modal { display: none !important; }
+    table { zoom: 1; }
     tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     @page { size: A4 landscape; margin: 15mm; }
     body { margin: 0; }

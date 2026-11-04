@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Andy Auto — Suburb Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  body { margin:0; font-family:sans-serif; }
+  #map { height:100vh; }
+  .legend { background:#fff; padding:10px 14px; border-radius:8px; line-height:1.8em; font-size:0.85em; }
+  .legend span { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+  .suburb-label { background:none; border:none; box-shadow:none; font-size:11px; font-weight:600; color:#222; text-shadow:1px 1px 2px #fff, -1px -1px 2px #fff; white-space:nowrap; }
+</style>
+</head><body>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map').setView([-27.71, 153.19], 10);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap contributors © CARTO', maxZoom:19
+  }).addTo(map);
+
+  L.circleMarker([-27.7159492,153.2022293], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Beenleigh</b><br>3.7km · 6min')
+    .bindTooltip('Beenleigh', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7307865,153.2051975], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Mount Warren Park</b><br>3.9km · 7min')
+    .bindTooltip('Mount Warren Park', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7030065,153.2181428], {radius:7, color:'#333', fillColor:'#333', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Eagleby</b><br>0km · 0min')
+    .bindTooltip('Eagleby', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6981039,153.1709432], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Edens Landing</b><br>6.8km · 10min')
+    .bindTooltip('Edens Landing', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7095975,153.1875982], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Holmview</b><br>8.4km · 12min')
+    .bindTooltip('Holmview', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7352654,153.2252177], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Yatala</b><br>6.8km · 9min')
+    .bindTooltip('Yatala', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6759155,153.236016], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Carbrook</b><br>14.6km · 16min')
+    .bindTooltip('Carbrook', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6687965,153.2014437], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Cornubia</b><br>8km · 9min')
+    .bindTooltip('Cornubia', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7002085,153.2754081], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Alberton</b><br>9.9km · 12min')
+    .bindTooltip('Alberton', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7314624,153.2460382], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Stapylton</b><br>5.6km · 7min')
+    .bindTooltip('Stapylton', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7375909,153.1723698], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Bahrs Scrub</b><br>9km · 14min')
+    .bindTooltip('Bahrs Scrub', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7586117,153.1750031], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Belivah</b><br>9.6km · 13min')
+    .bindTooltip('Belivah', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6742992,153.1689858], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Tanah Merah</b><br>6.5km · 8min')
+    .bindTooltip('Tanah Merah', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.683054,153.1894379], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Loganholme</b><br>4.2km · 6min')
+    .bindTooltip('Loganholme', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6524382,153.1727858], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Shailer Park</b><br>11.8km · 12min')
+    .bindTooltip('Shailer Park', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6624666,153.1415558], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Meadowbrook</b><br>10.1km · 10min | Toll $5.66')
+    .bindTooltip('Meadowbrook', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7035157,153.1528045], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Waterford</b><br>8.7km · 13min')
+    .bindTooltip('Waterford', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6910154,153.125553], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Waterford West</b><br>13.8km · 14min | Toll $5.66')
+    .bindTooltip('Waterford West', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7444916,153.1921635], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Windaroo</b><br>8km · 11min')
+    .bindTooltip('Windaroo', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6412988,153.1072741], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Logan Central</b><br>16km · 18min | Toll $5.66')
+    .bindTooltip('Logan Central', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6557421,153.1196351], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Kingston</b><br>16.3km · 19min')
+    .bindTooltip('Kingston', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6325507,153.104227], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Woodridge</b><br>15.9km · 17min')
+    .bindTooltip('Woodridge', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.638501,153.1287129], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Slacks Creek</b><br>13.3km · 13min')
+    .bindTooltip('Slacks Creek', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6188844,153.1308699], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Springwood</b><br>15.9km · 17min')
+    .bindTooltip('Springwood', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.643611,153.1538113], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Daisy Hill</b><br>13km · 13min')
+    .bindTooltip('Daisy Hill', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6830685,153.0598889], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Heritage Park</b><br>22.3km · 20min | Toll $5.66')
+    .bindTooltip('Heritage Park', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6766915,153.0415219], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Regents Park</b><br>22.6km · 22min | Toll $5.66')
+    .bindTooltip('Regents Park', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.662885,153.0516055], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Browns Plains</b><br>23.2km · 21min | Toll $5.66')
+    .bindTooltip('Browns Plains', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6632327,153.0272315], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Hillcrest</b><br>23.6km · 21min | Toll $5.66')
+    .bindTooltip('Hillcrest', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6987848,153.0481122], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Park Ridge</b><br>19.7km · 24min | Toll $5.66')
+    .bindTooltip('Park Ridge', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.727592,153.0356009], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Park Ridge South</b><br>30.9km · 26min | Toll $5.66')
+    .bindTooltip('Park Ridge South', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6755473,153.103837], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Marsden</b><br>16.4km · 19min | Toll $5.66')
+    .bindTooltip('Marsden', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7675482,153.1070052], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Logan Village</b><br>18.2km · 24min')
+    .bindTooltip('Logan Village', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7413113,153.135806], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Buccan</b><br>11.2km · 16min')
+    .bindTooltip('Buccan', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7012349,152.9579514], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Greenbank</b><br>36.1km · 33min | Toll $5.66')
+    .bindTooltip('Greenbank', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7478163,152.9510732], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>New Beith</b><br>36.8km · 34min | Toll $5.66')
+    .bindTooltip('New Beith', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.8630643,152.9781537], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Cedar Grove</b><br>36.8km · 42min')
+    .bindTooltip('Cedar Grove', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.8256448,153.1800983], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Cedar Creek</b><br>18.1km · 20min')
+    .bindTooltip('Cedar Creek', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7614106,153.190012], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Bannockburn</b><br>10.2km · 13min')
+    .bindTooltip('Bannockburn', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.9258705,152.9937792], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Veresdale</b><br>41.3km · 45min')
+    .bindTooltip('Veresdale', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.8318573,153.0227538], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Jimboomba</b><br>30.7km · 36min')
+    .bindTooltip('Jimboomba', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.8295029,152.8494568], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Undullah</b><br>65.1km · 67min | Toll $5.66')
+    .bindTooltip('Undullah', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.8160216,152.9652865], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Flagstone</b><br>46.4km · 39min | Toll $5.66')
+    .bindTooltip('Flagstone', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-28.0835588,152.8415478], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Kooralbyn</b><br>74.9km · 66min')
+    .bindTooltip('Kooralbyn', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.9405645,152.9620301], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Gleneagle</b><br>47.6km · 50min')
+    .bindTooltip('Gleneagle', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.8811842,153.1177699], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Tamborine</b><br>27.7km · 28min')
+    .bindTooltip('Tamborine', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.9489195,153.1929006], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Tamborine Mountain</b><br>40.3km · 44min')
+    .bindTooltip('Tamborine Mountain', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-28.0385865,153.1419128], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Canungra</b><br>45.5km · 42min')
+    .bindTooltip('Canungra', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.7991852,153.2824294], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Ormeau</b><br>11.1km · 10min')
+    .bindTooltip('Ormeau', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.800612,153.2337463], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Ormeau Hills</b><br>17.1km · 17min')
+    .bindTooltip('Ormeau Hills', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.8161679,153.2924022], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Pimpama</b><br>16km · 12min')
+    .bindTooltip('Pimpama', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.8564881,153.3203988], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Coomera</b><br>24.6km · 21min')
+    .bindTooltip('Coomera', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.8529809,153.2982761], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Upper Coomera</b><br>22.3km · 19min')
+    .bindTooltip('Upper Coomera', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.8417192,153.2686268], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Willow Vale</b><br>20.6km · 18min')
+    .bindTooltip('Willow Vale', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.9015337,153.2997577], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Oxenford</b><br>26.7km · 21min')
+    .bindTooltip('Oxenford', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.9053051,153.3324585], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Helensvale</b><br>28.7km · 24min')
+    .bindTooltip('Helensvale', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.9280622,153.2823303], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Maudsland</b><br>32.6km · 28min')
+    .bindTooltip('Maudsland', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.9382489,153.3092643], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Pacific Pines</b><br>33.3km · 26min')
+    .bindTooltip('Pacific Pines', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.9360655,153.3653514], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Arundel</b><br>33.7km · 26min')
+    .bindTooltip('Arundel', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.9745778,153.3754344], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Molendinar</b><br>39.1km · 28min')
+    .bindTooltip('Molendinar', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.994108,153.3500265], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Nerang</b><br>36.9km · 27min')
+    .bindTooltip('Nerang', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-28.0360735,153.339128], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Worongary</b><br>42.3km · 30min')
+    .bindTooltip('Worongary', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-28.0831267,153.3585354], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Mudgeeraba</b><br>50.5km · 35min')
+    .bindTooltip('Mudgeeraba', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-28.1447985,153.3554383], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Bonogin</b><br>56.5km · 42min')
+    .bindTooltip('Bonogin', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-28.02077,153.3683962], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Carrara</b><br>41.3km · 30min')
+    .bindTooltip('Carrara', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-28.0514674,153.3739972], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Merrimac</b><br>43.8km · 30min')
+    .bindTooltip('Merrimac', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-28.0705635,153.3916396], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Robina</b><br>51.3km · 36min')
+    .bindTooltip('Robina', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-28.0971316,153.3992325], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Varsity Lakes</b><br>53.5km · 38min')
+    .bindTooltip('Varsity Lakes', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-28.0848122,153.4353217], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Burleigh Waters</b><br>55.8km · 42min')
+    .bindTooltip('Burleigh Waters', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-28.1205111,153.4032864], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Reedy Creek</b><br>52.6km · 37min')
+    .bindTooltip('Reedy Creek', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.522037,153.1918063], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Capalaba</b><br>27.5km · 29min')
+    .bindTooltip('Capalaba', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5232672,153.2214907], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Alexandra Hills</b><br>28.1km · 32min')
+    .bindTooltip('Alexandra Hills', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.558201,153.2666265], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Thornlands</b><br>26.3km · 29min')
+    .bindTooltip('Thornlands', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5262987,153.2667298], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Cleveland</b><br>30.3km · 34min')
+    .bindTooltip('Cleveland', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6126945,153.3036238], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Redland Bay</b><br>25.9km · 30min')
+    .bindTooltip('Redland Bay', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5843003,153.300364], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Victoria Point</b><br>25.2km · 29min')
+    .bindTooltip('Victoria Point', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.4840595,153.2407425], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Wellington Point</b><br>32.4km · 38min')
+    .bindTooltip('Wellington Point', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.4943324,153.2151619], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Birkdale</b><br>39km · 38min')
+    .bindTooltip('Birkdale', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.4856896,153.1813671], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Ransome</b><br>37km · 31min')
+    .bindTooltip('Ransome', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.4979921,153.1329074], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Belmont</b><br>32.9km · 28min')
+    .bindTooltip('Belmont', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.439756,153.1661233], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Wynnum</b><br>40km · 36min')
+    .bindTooltip('Wynnum', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.4679039,153.1883924], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Lota</b><br>38.9km · 34min')
+    .bindTooltip('Lota', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.453347,153.1840865], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Manly</b><br>39.3km · 36min')
+    .bindTooltip('Manly', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5032764,153.1040678], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Carindale</b><br>31.6km · 25min')
+    .bindTooltip('Carindale', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5804725,153.0884044], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Eight Mile Plains</b><br>24.6km · 24min')
+    .bindTooltip('Eight Mile Plains', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5752834,153.0557235], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Sunnybank</b><br>25.1km · 24min')
+    .bindTooltip('Sunnybank', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5991376,153.0486182], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Sunnybank Hills</b><br>28.8km · 27min | Toll $13.86')
+    .bindTooltip('Sunnybank Hills', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5647285,153.0576815], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Robertson</b><br>25.9km · 26min')
+    .bindTooltip('Robertson', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5857312,153.025206], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Acacia Ridge</b><br>30km · 27min | Toll $14.28')
+    .bindTooltip('Acacia Ridge', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6109526,153.0315999], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Algester</b><br>26.7km · 24min | Toll $5.66')
+    .bindTooltip('Algester', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6357372,153.0300028], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Parkinson</b><br>23.2km · 19min | Toll $5.66')
+    .bindTooltip('Parkinson', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6126833,153.068394], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Stretton</b><br>23.6km · 21min | Toll $5.66')
+    .bindTooltip('Stretton', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.648265,153.0551045], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Drewvale</b><br>19.7km · 18min | Toll $5.66')
+    .bindTooltip('Drewvale', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.570167,153.126907], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Rochedale</b><br>19.6km · 21min')
+    .bindTooltip('Rochedale', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6009655,153.1283725], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Rochedale South</b><br>18.6km · 19min')
+    .bindTooltip('Rochedale South', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5557025,153.0807674], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Upper Mt Gravatt</b><br>23.4km · 22min')
+    .bindTooltip('Upper Mt Gravatt', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5386205,153.072934], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Mt Gravatt</b><br>27.6km · 22min')
+    .bindTooltip('Mt Gravatt', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5326267,153.0830705], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Mt Gravatt East</b><br>30.1km · 26min')
+    .bindTooltip('Mt Gravatt East', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.543318,153.1248543], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Mackenzie</b><br>24.8km · 21min')
+    .bindTooltip('Mackenzie', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5514355,153.1031592], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Wishart</b><br>25.1km · 20min')
+    .bindTooltip('Wishart', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5329057,153.1031542], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Mansfield</b><br>27.3km · 24min')
+    .bindTooltip('Mansfield', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5354776,153.020739], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Moorooka</b><br>31.2km · 27min')
+    .bindTooltip('Moorooka', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5482033,153.0115871], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Rocklea</b><br>43.2km · 33min | Toll $14.28')
+    .bindTooltip('Rocklea', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5543181,153.0265175], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Salisbury</b><br>31.3km · 27min')
+    .bindTooltip('Salisbury', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.566855,153.0367212], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Coopers Plains</b><br>32.9km · 32min | Toll $14.28')
+    .bindTooltip('Coopers Plains', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5981125,153.0794092], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Runcorn</b><br>24.6km · 24min')
+    .bindTooltip('Runcorn', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6047543,153.0982186], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Kuraby</b><br>18.5km · 19min')
+    .bindTooltip('Kuraby', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6070295,153.1123282], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Underwood</b><br>16.7km · 16min')
+    .bindTooltip('Underwood', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6707016,153.1379342], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Loganlea</b><br>12.9km · 13min | Toll $5.66')
+    .bindTooltip('Loganlea', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6624666,153.1415558], {radius:7, color:'#2a7a2a', fillColor:'#2a7a2a', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Meadowbrook</b><br>10.1km · 10min | Toll $5.66')
+    .bindTooltip('Meadowbrook', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.689416,153.0914486], {radius:7, color:'#f0a500', fillColor:'#f0a500', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Crestmead</b><br>16.4km · 19min | Toll $5.66')
+    .bindTooltip('Crestmead', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6228769,152.9702476], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Forest Lake</b><br>30.9km · 28min | Toll $14.28')
+    .bindTooltip('Forest Lake', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5949839,152.9538031], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Richlands</b><br>36.9km · 30min | Toll $14.28')
+    .bindTooltip('Richlands', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.568054,152.9542605], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Darra</b><br>39.5km · 30min | Toll $14.28')
+    .bindTooltip('Darra', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.591291,152.9682672], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Inala</b><br>36.3km · 29min | Toll $14.28')
+    .bindTooltip('Inala', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.591662,152.985997], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Durack</b><br>32.3km · 28min | Toll $14.28')
+    .bindTooltip('Durack', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.5876925,152.9181272], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Wacol</b><br>38.7km · 31min | Toll $14.28')
+    .bindTooltip('Wacol', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6087887,152.9014958], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Goodna</b><br>37.2km · 30min | Toll $14.28')
+    .bindTooltip('Goodna', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.634499,152.9199269], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Camira</b><br>37.3km · 30min | Toll $14.28')
+    .bindTooltip('Camira', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6540497,152.908847], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Springfield</b><br>38.6km · 30min | Toll $14.28')
+    .bindTooltip('Springfield', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6826685,152.9202698], {radius:7, color:'#e05c00', fillColor:'#e05c00', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Springfield Lakes</b><br>37.8km · 29min | Toll $14.28')
+    .bindTooltip('Springfield Lakes', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.660554,152.8792482], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Augustine Heights</b><br>41.4km · 32min | Toll $14.28')
+    .bindTooltip('Augustine Heights', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6160323,152.7608348], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Ipswich</b><br>51km · 43min | Toll $14.28')
+    .bindTooltip('Ipswich', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.613976,152.7923336], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Booval</b><br>47.9km · 38min | Toll $14.28')
+    .bindTooltip('Booval', {permanent:true, direction:'right', className:'suburb-label'});
+  L.circleMarker([-27.6513182,152.8479458], {radius:7, color:'#cc0000', fillColor:'#cc0000', fillOpacity:0.85, weight:2})
+    .addTo(map).bindPopup('<b>Redbank Plains</b><br>48km · 37min | Toll $14.28')
+    .bindTooltip('Redbank Plains', {permanent:true, direction:'right', className:'suburb-label'});
+
+  const legend = L.control({position:'bottomright'});
+  legend.onAdd = () => {
+    const d = L.DomUtil.create('div','legend');
+    d.innerHTML = '<b>Distance from Eagleby</b><br>'
+      + '<span style="background:#333"></span> Base (0km)<br>'
+      + '<span style="background:#2a7a2a"></span> 0–15km<br>'
+      + '<span style="background:#f0a500"></span> 15–25km<br>'
+      + '<span style="background:#e05c00"></span> 25–40km<br>'
+      + '<span style="background:#cc0000"></span> 40km+';
+    return d;
+  };
+  legend.addTo(map);
+</script>
+</body></html>
