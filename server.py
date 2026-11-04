@@ -200,10 +200,10 @@ def scan_keywords():
             rows = cur.fetchall()
             con.close()
             for rowid, sql_text, phone, attributed_body, service in rows:
-                last_rowid = max(last_rowid, rowid)
-                save_last_rowid(last_rowid)
                 text = decode_text(sql_text, attributed_body).lower().strip()
                 if not text:
+                    last_rowid = max(last_rowid, rowid)
+                    save_last_rowid(last_rowid)
                     continue
                 if 'booking confirmed' in text:
                     action = 'confirmed'
@@ -212,11 +212,16 @@ def scan_keywords():
                 elif 'booking cancelled' in text:
                     action = 'cancelled'
                 else:
+                    last_rowid = max(last_rowid, rowid)
+                    save_last_rowid(last_rowid)
                     continue
+                # Save ROWID only after successful processing so crashes don't skip messages
                 print(f"Keyword: {text} from {phone}", flush=True)
                 msgs = query(phone)
                 if not msgs:
                     print(f"No messages found for {phone}", flush=True)
+                    last_rowid = max(last_rowid, rowid)
+                    save_last_rowid(last_rowid)
                     continue
                 contact_name = clean_contact_name(get_contact_name(phone))
                 body = json.dumps({
@@ -240,6 +245,8 @@ def scan_keywords():
                             print(f"Replied to {phone} via {service}", flush=True)
                         except Exception as se:
                             print(f"SEND FAILED for {phone}: {se}\nReply was: {reply}", flush=True)
+                last_rowid = max(last_rowid, rowid)
+                save_last_rowid(last_rowid)
         except Exception as e:
             print(f"scan error: {e}", flush=True)
         time.sleep(5)
