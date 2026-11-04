@@ -324,11 +324,16 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
   if (phone && !ai.mobile) ai.mobile = phone;
   if (action === 'confirmed' || action === 'confirm') {
     await saveSmsFromAi(ai, env, cfg, phone);
-    const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
     const { y, m, d } = ai.date;
     const { h, min } = ai.start;
     const clock = `${h % 12 || 12}${min ? ':' + pad(min) : ''}${h < 12 ? 'am' : 'pm'}`;
-    const when = `${d}/${m} ${WD_LONG[dowOf({ y, m, d })]} ${clock}`;
+    let when = `${d}/${m} ${WD_LONG[dowOf({ y, m, d })]} ${clock}`;
+    if (ai.end) {
+      let eh = ai.end.h;
+      if (eh * 60 + ai.end.min <= h * 60 + min && eh < 12) eh += 12;
+      const eclock = `${eh % 12 || 12}${ai.end.min ? ':' + pad(ai.end.min) : ''}${eh < 12 ? 'am' : 'pm'}`;
+      when += ` – ${eclock}`;
+    }
     return `✅ Andy Auto AC Regas\nTime: ${when}\nSee you then!`;
   }
   if (action === 'updated' || action === 'update') {
@@ -336,10 +341,16 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
     if (!list.length) {
       await saveSmsFromAi(ai, env, cfg, phone);
       await bark(env, `⚠️ Booking updated: no existing event found`, `Created new booking for ${phone} instead.`, '');
-      const t = buildTimes(ai.date, ai.start, ai.end, cfg.minutes * 60000);
       const { y, m, d } = ai.date; const { h, min } = ai.start;
       const clock = `${h % 12 || 12}${min ? ':' + pad(min) : ''}${h < 12 ? 'am' : 'pm'}`;
-      return `✅ Andy Auto AC Regas\nTime: ${d}/${m} ${WD_LONG[dowOf({ y, m, d })]} ${clock}\nSee you then!`;
+      let when = `${d}/${m} ${WD_LONG[dowOf({ y, m, d })]} ${clock}`;
+      if (ai.end) {
+        let eh = ai.end.h;
+        if (eh * 60 + ai.end.min <= h * 60 + min && eh < 12) eh += 12;
+        const eclock = `${eh % 12 || 12}${ai.end.min ? ':' + pad(ai.end.min) : ''}${eh < 12 ? 'am' : 'pm'}`;
+        when += ` – ${eclock}`;
+      }
+      return `✅ Andy Auto AC Regas\nTime: ${when}\nSee you then!`;
     }
     const target = list[0];
     const old = localParts(target.startMs, cfg.tz);
@@ -539,10 +550,10 @@ Rules:
         name: str("Customer's name from the conversation header, or empty string if not visible"),
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
-        end: str('HH:MM in 24-hour time, or "" if not mentioned'),
+        end: str('If the conversation mentions an arrival window (e.g. "around 3:30–4pm", "between 2 and 2:30"), return the window END time in HH:MM 24-hour format (e.g. "16:00"). This is used to show the customer a range in the confirmation. Leave "" if only a single arrival time is mentioned with no range.'),
         service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test". No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
-        address: str('Service address only — street and suburb. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number"),
         vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
@@ -622,10 +633,10 @@ ${conversationText}`;
         name: str("Customer's real name. If the contact label looks like a date/time (e.g. '21/10 Monday 3pm'), leave empty — that is a business label, not the customer's name. Leave empty if unknown."),
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
-        end: str('HH:MM in 24-hour time, or "" if not mentioned'),
+        end: str('If the conversation mentions an arrival window (e.g. "around 3:30–4pm", "between 2 and 2:30"), return the window END time in HH:MM 24-hour format (e.g. "16:00"). This is used to show the customer a range in the confirmation. Leave "" if only a single arrival time is mentioned with no range.'),
         service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test". No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
-        address: str('Service address only — street and suburb. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number"),
         vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
@@ -880,10 +891,10 @@ ${transcript}`;
       properties: {
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
-        end: str('HH:MM in 24-hour time, or "" if not mentioned'),
+        end: str('If the conversation mentions an arrival window (e.g. "around 3:30–4pm", "between 2 and 2:30"), return the window END time in HH:MM 24-hour format (e.g. "16:00"). This is used to show the customer a range in the confirmation. Leave "" if only a single arrival time is mentioned with no range.'),
         service: str('Service type in 1-3 words based on what was discussed, e.g. "Regas", "Pressure Test", "Leak Check". Keep it short and specific. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
-        address: str('Service address only — street and suburb. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number"),
         vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
@@ -931,7 +942,13 @@ function customerMessage(d, w, env, header) {
   const { y, m, d: day } = w.date;
   const h = w.start.h, min = w.start.min;
   const clock = `${h % 12 || 12}${min ? ':' + pad(min) : ''}${h < 12 ? 'am' : 'pm'}`;
-  const when = `${day}/${m} ${WD_LONG[dowOf({ y, m, d: day })]} ${clock}`;
+  let when = `${day}/${m} ${WD_LONG[dowOf({ y, m, d: day })]} ${clock}`;
+  if (w.end) {
+    let eh = w.end.h;
+    if (eh * 60 + w.end.min <= h * 60 + min && eh < 12) eh += 12;
+    const eclock = `${eh % 12 || 12}${w.end.min ? ':' + pad(w.end.min) : ''}${eh < 12 ? 'am' : 'pm'}`;
+    when += ` – ${eclock}`;
+  }
   const lines = [header];
   if (d.service) lines.push(`Service: ${d.service}`);
   if (d.price) lines.push(`Price: ${d.price}`);
@@ -1721,13 +1738,7 @@ function parseClock(s) {
 function buildTimes(date, start, end, defaultMs) {
   const { y, m, d } = date;
   const startMs = Date.UTC(y, m - 1, d, start.h, start.min);
-  let endMs = startMs + defaultMs;
-  if (end) {
-    let eh = end.h;
-    if (eh * 60 + end.min <= start.h * 60 + start.min && eh < 12) eh += 12;
-    const v = Date.UTC(y, m - 1, d, eh, end.min);
-    if (v > startMs) endMs = v;
-  }
+  const endMs = startMs + defaultMs;
   return {
     start: naive(startMs), end: naive(endMs),
     label: `${d}/${m} ${WD_LONG[dowOf(date)]} ${start.h % 12 || 12}${start.min ? `:${pad(start.min)}` : ''}${start.h < 12 ? 'am' : 'pm'}`,
