@@ -614,6 +614,7 @@ The business owner is confirming a booking. Extract the booking details and save
 Rules:
 - Dates are Australian (day/month). Words like "tomorrow" or "Sunday" are relative to today's date unless a specific date is given.
 - Use the final agreed values (last price quoted, time the customer accepted).
+- If a time is expressed as "around X" or "about X" and the customer accepts it, use X as the start time. "Around" means approximate, not unknown — still extract it.
 - The business's own phone number is 0478 701 289. Never use it as the customer's mobile.
 ${ownerRule}
 ${contactNameLine}
@@ -875,6 +876,7 @@ Rules:
   If the customer cancelled and then came back without giving new details, reuse the most recent agreed details.
 - Dates in the chat are Australian (day/month). Words like "tomorrow" or "Sunday" are relative to the time that message was sent, shown in [brackets].
 - Use the final agreed values, e.g. the last price quoted by Us, not an earlier estimate, and the time the customer finally accepted, not other options offered.
+- If a time is expressed as "around X" or "about X" and the customer accepts it, use X as the start time. "Around" means approximate, not unknown — still extract it.
 - The business's own phone number appears in messages from Us. Never use it as the customer's mobile.
 - Leave a field as "" if it was not mentioned. Do not guess or invent anything.
 - notes: only info the technician needs on-site that is NOT captured in other fields — e.g. gate code, parking instructions, specific symptom, part needed. IMPORTANT EXCEPTION: if the customer is coming to Andy's location (not a mobile visit to the customer), always write "Customer coming to us". Do NOT include: customer name, service breakdown, price reasoning, "mobile service at home", "time customer accepted", or any AI reasoning. Leave "" if nothing genuinely useful.
@@ -1472,7 +1474,8 @@ async function printPage(env, origin, dateParam = '') {
     .print-btn { display: none; }
     #print-modal { display: none !important; }
     table { zoom: 1; }
-    tr { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     @page { size: A4 landscape; margin: 15mm; }
     body { margin: 0; }
     th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
