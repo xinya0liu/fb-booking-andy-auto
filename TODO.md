@@ -105,14 +105,11 @@ Andy 打开审批页面
   - AI 把斜杠前的数字当门牌号，丢掉了真正的门牌号
   - 换成 Sonnet 可缓解；也可加 prompt 规则
 
-- [ ] **Calendar 手动修改不反映在打印页**
-  - 打印页从 iCloud CalDAV 读 DESCRIPTION 字段解析 Service/Price/Address
-  - 在 Calendar app 里改 SUMMARY（标题）不影响 DESCRIPTION，所以打印不变
-  - 需要调查：Andy 在改哪个字段，如何让两者同步
+- [x] **Calendar 手动修改不反映在打印页**
+  - 打印页现在优先读 SUMMARY（标题）里的 price/service，Calendar 改标题即时反映
 
-- [ ] **地址带 "QLD, Australia"**
-  - AI 提取地址时附加了 state/country
-  - 修法：prompt 加规则 "不要包含州名（QLD）和国家（Australia）"
+- [x] **地址带 "QLD, Australia"**
+  - Prompt 已加规则，AI 不再附加 postcode / QLD / Australia
 
 ---
 
