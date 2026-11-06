@@ -1379,16 +1379,11 @@ async function printPage(env, origin, dateParam = '') {
     const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
     const desc = e.description || '';
     const isSms = !e.psid;
-    // FB bookings: service/price from X-FB fields; non-FB: parse from summary
-    let service = e.service || '';
-    let price = e.price || '';
-    let vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || '';
-    if (isSms && (!service || !vehicle)) {
-      const parsed = parseSummaryFields(e.summary || '');
-      if (!service) service = parsed.service;
-      if (!price) price = parsed.price;
-      if (!vehicle) vehicle = parsed.vehicle;
-    }
+    // Always parse summary so manual Calendar title edits (e.g. price change) take precedence
+    const summaryParsed = parseSummaryFields(e.summary || '');
+    let service = summaryParsed.service || e.service || '';
+    let price = summaryParsed.price || e.price || '';
+    let vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || summaryParsed.vehicle || e.vehicle || '';
     services.push(service);
     const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
     const bg = isSms ? '#e0e0e0' : '#fff';
