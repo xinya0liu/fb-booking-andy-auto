@@ -57,7 +57,7 @@
  *   CONFIRM_HEADER       自动确认消息的第一行，默认 "✅ Booking details – Andy Auto AC Regas"
  *   UPDATE_HEADER        自动更新消息的第一行，默认 "🔄 Updated booking details – Andy Auto AC Regas"
  *   CONFIRM_FOOTER       自动确认 / 更新消息的最后一行
- *   AI_MODEL             默认 "claude-haiku-5-5"
+ *   AI_MODEL             默认 "claude-sonnet-4-6"
  *
  * 检查 iCloud 设置：浏览器打开 https://你的worker网址/check?token=你的VERIFY_TOKEN
  */
@@ -553,7 +553,7 @@ Rules:
         end: str('If the conversation mentions an arrival window (e.g. "around 3:30–4pm", "between 2 and 2:30"), return the window END time in HH:MM 24-hour format (e.g. "16:00"). This is used to show the customer a range in the confirmation. Leave "" if only a single arrival time is mentioned with no range.'),
         service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test". No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
-        address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. Do not include state (QLD) or country (Australia). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number"),
         vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
@@ -568,7 +568,7 @@ Rules:
       method: 'POST',
       headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: env.AI_MODEL || 'claude-haiku-5-5',
+        model: env.AI_MODEL || 'claude-sonnet-4-6',
         max_tokens: 1000,
         tools: [tool],
         tool_choice: { type: 'tool', name: 'save_booking' },
@@ -638,7 +638,7 @@ ${conversationText}`;
         end: str('If the conversation mentions an arrival window (e.g. "around 3:30–4pm", "between 2 and 2:30"), return the window END time in HH:MM 24-hour format (e.g. "16:00"). This is used to show the customer a range in the confirmation. Leave "" if only a single arrival time is mentioned with no range.'),
         service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test". No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
-        address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. Do not include state (QLD) or country (Australia). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number"),
         vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
@@ -653,7 +653,7 @@ ${conversationText}`;
       method: 'POST',
       headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: env.AI_MODEL || 'claude-haiku-5-5',
+        model: env.AI_MODEL || 'claude-sonnet-4-6',
         max_tokens: 1000,
         tools: [tool],
         tool_choice: { type: 'tool', name: 'save_booking' },
@@ -898,7 +898,7 @@ ${transcript}`;
         end: str('If the conversation mentions an arrival window (e.g. "around 3:30–4pm", "between 2 and 2:30"), return the window END time in HH:MM 24-hour format (e.g. "16:00"). This is used to show the customer a range in the confirmation. Leave "" if only a single arrival time is mentioned with no range.'),
         service: str('Service type in 1-3 words based on what was discussed, e.g. "Regas", "Pressure Test", "Leak Check". Keep it short and specific. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
-        address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. Do not include state (QLD) or country (Australia). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number"),
         vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
@@ -913,7 +913,7 @@ ${transcript}`;
       method: 'POST',
       headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: env.AI_MODEL || 'claude-haiku-5-5',
+        model: env.AI_MODEL || 'claude-sonnet-4-6',
         max_tokens: 1000,
         tools: [tool],
         tool_choice: { type: 'tool', name: 'save_booking' }, // 一定要用这个工具回答，不能写别的文字

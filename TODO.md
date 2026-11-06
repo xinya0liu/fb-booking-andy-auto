@@ -99,6 +99,34 @@ Andy 打开审批页面
 
 ---
 
+## 待做：AI 提取问题修复 🔧
+
+- [ ] **单元号地址被截断**（如 `2/32a XX St` → `2 XX St`）
+  - AI 把斜杠前的数字当门牌号，丢掉了真正的门牌号
+  - 换成 Sonnet 可缓解；也可加 prompt 规则
+
+- [ ] **Calendar 手动修改不反映在打印页**
+  - 打印页从 iCloud CalDAV 读 DESCRIPTION 字段解析 Service/Price/Address
+  - 在 Calendar app 里改 SUMMARY（标题）不影响 DESCRIPTION，所以打印不变
+  - 需要调查：Andy 在改哪个字段，如何让两者同步
+
+- [ ] **地址带 "QLD, Australia"**
+  - AI 提取地址时附加了 state/country
+  - 修法：prompt 加规则 "不要包含州名（QLD）和国家（Australia）"
+
+---
+
+## 待做：每日收入汇总 💰
+
+- [ ] **`/summary` 页面**
+  - 读取当天所有日历预约，列出每单 Service / Price / Customer
+  - 每单旁边有按钮：Cash / PayID（点击记录支付方式）
+  - 底部汇总：今日总收入、现金小计、PayID 小计
+  - 支付方式存储在 Cloudflare KV（key: 日历事件 UID）
+  - 需要先建好 D1 或 KV 存储方案
+
+---
+
 ## 待做：CRM / 看板 📊
 
 - [ ] 建一个看板，集中显示所有客人信息：

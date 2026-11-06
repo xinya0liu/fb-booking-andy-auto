@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import sqlite3, json, datetime, time, threading, subprocess, re, os, sys, glob
-import urllib.request, urllib.parse
+import urllib.request, urllib.parse, urllib.error
 
 DB = "/Users/andy/Library/Messages/chat.db"
 WORKER = "https://fb-booking-andy-auto.susanna0liu.workers.dev"
@@ -236,15 +236,23 @@ def scan_keywords():
                     headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
                     method="POST"
                 )
-                with urllib.request.urlopen(req, timeout=30) as r:
-                    result = json.loads(r.read())
-                    reply = result.get("reply", "")
-                    if reply:
-                        try:
-                            send_imessage(phone, reply, service=service)
-                            print(f"Replied to {phone} via {service}", flush=True)
-                        except Exception as se:
-                            print(f"SEND FAILED for {phone}: {se}\nReply was: {reply}", flush=True)
+                try:
+                    with urllib.request.urlopen(req, timeout=30) as r:
+                        result = json.loads(r.read())
+                        reply = result.get("reply", "")
+                        if reply:
+                            try:
+                                send_imessage(phone, reply, service=service)
+                                print(f"Replied to {phone} via {service}", flush=True)
+                            except Exception as se:
+                                print(f"SEND FAILED for {phone}: {se}\nReply was: {reply}", flush=True)
+                except urllib.error.HTTPError as e:
+                    # Worker returned 4xx/5xx — permanent failure, skip this message
+                    print(f"Worker error {e.code} for {phone}: {e.read().decode('utf-8', errors='replace')[:200]}", flush=True)
+                except urllib.error.URLError as e:
+                    # Network error — stop this batch so later rows don't advance last_rowid past this message
+                    print(f"Network error for {phone}, will retry: {e}", flush=True)
+                    break
                 last_rowid = max(last_rowid, rowid)
                 save_last_rowid(last_rowid)
         except Exception as e:
