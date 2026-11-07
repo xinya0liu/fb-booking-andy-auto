@@ -321,7 +321,7 @@ async function doConfirm(ctx) {
 
 async function doKeywordBooking(conversationText, phone, action, env, cfg, contactName = '') {
   const ai = await aiFromSmsChat(conversationText, cfg, env, contactName);
-  if (phone && !ai.mobile) ai.mobile = phone;
+  if (phone) ai.mobile = phone;
   if (action === 'confirmed' || action === 'confirm') {
     await saveSmsFromAi(ai, env, cfg, phone);
     const { y, m, d } = ai.date;
@@ -379,7 +379,9 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
         noteFields.push(`Time: ${t.label}`);
       }
     }
-    if (ai.address && ai.address !== target.location) {
+    const newAddrHasNumber = /\d/.test(ai.address || '');
+    const oldAddrHasNumber = /\d/.test(target.location || '');
+    if (ai.address && ai.address !== target.location && (newAddrHasNumber || !oldAddrHasNumber)) {
       changes.LOCATION = [`LOCATION:${icsEsc(ai.address)}`];
       replyLines.push(`Updated address: ${ai.address}`);
       noteFields.push(`Address: ${ai.address}`);
@@ -445,7 +447,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
 async function doSmsBooking(conversationText, env, cfg, phone = '') {
   if (!conversationText.trim()) throw new Error('Empty conversation.');
   const ai = await aiFromSmsChat(conversationText, cfg, env);
-  if (phone && !ai.mobile) ai.mobile = phone;
+  if (phone) ai.mobile = phone;
   await saveSmsFromAi(ai, env, cfg, phone);
 }
 
@@ -554,7 +556,7 @@ Rules:
         service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test". No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. Preserve unit/flat numbers exactly as written (e.g. "2/32a Smith St" must stay as "2/32a Smith St", not "2 Smith St"). Do not include postcode, state (QLD) or country (Australia). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
-        mobile: str("Customer's mobile number"),
+        mobile: str("Customer's mobile number. Leave \"\" if not mentioned."),
         vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
       },
@@ -620,6 +622,8 @@ Rules:
 ${ownerRule}
 ${contactNameLine}
 - Leave a field as "" if not mentioned. Do not guess or invent anything.
+- Messages are labeled "Us" (business owner) or "Customer". Only extract service, price, and address from "Customer" messages — never from "Us" messages.
+- The contact name is provided for name identification only. Do not use it as the service address.
 - notes: only info the technician needs on-site that is NOT captured in other fields — e.g. gate code, parking instructions, specific symptom, part needed. IMPORTANT EXCEPTION: if the customer is coming to Andy's location (not a mobile visit to the customer), always write "Customer coming to us". Do NOT include: customer name, service breakdown, price reasoning, "mobile service at home", "time customer accepted", or any AI reasoning. Leave "" if nothing genuinely useful.
 
 Conversation:
@@ -639,7 +643,7 @@ ${conversationText}`;
         service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test". No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. Preserve unit/flat numbers exactly as written (e.g. "2/32a Smith St" must stay as "2/32a Smith St", not "2 Smith St"). Do not include postcode, state (QLD) or country (Australia). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
-        mobile: str("Customer's mobile number"),
+        mobile: str("Customer's mobile number. Leave \"\" if not mentioned."),
         vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
       },
@@ -899,7 +903,7 @@ ${transcript}`;
         service: str('Service type in 1-3 words based on what was discussed, e.g. "Regas", "Pressure Test", "Leak Check". Keep it short and specific. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. Preserve unit/flat numbers exactly as written (e.g. "2/32a Smith St" must stay as "2/32a Smith St", not "2 Smith St"). Do not include postcode, state (QLD) or country (Australia). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
-        mobile: str("Customer's mobile number"),
+        mobile: str("Customer's mobile number. Leave \"\" if not mentioned."),
         vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
       },
