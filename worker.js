@@ -1193,7 +1193,7 @@ async function doUpdateFromChat(ctx) {
       updateLines.push(`${label} updated: ${val}`);
     }
   }
-  updateLines.push('', env.CONFIRM_FOOTER_UPDATE || 'Any changes, reply here or call Andy on 0478 701 289.');
+  updateLines.push('See you then!');
   const msg = updateLines.join('\n');
   let sent = null;
   if (env.AUTO_REPLY !== 'false') sent = await sendToCustomer(psid, msg, env);
