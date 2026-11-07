@@ -319,8 +319,20 @@ async function doConfirm(ctx) {
 
 // ================= SMS / 电话预约 =================
 
+function trimToLastConfirmation(conversationText) {
+  const lines = conversationText.split('\n');
+  let lastIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/Us:.*[✅🔄]/.test(lines[i])) lastIdx = i;
+  }
+  return lastIdx >= 0 ? lines.slice(lastIdx + 1).join('\n') : conversationText;
+}
+
 async function doKeywordBooking(conversationText, phone, action, env, cfg, contactName = '') {
-  const ai = await aiFromSmsChat(conversationText, cfg, env, contactName);
+  const textForAi = (action === 'updated' || action === 'update')
+    ? trimToLastConfirmation(conversationText)
+    : conversationText;
+  const ai = await aiFromSmsChat(textForAi, cfg, env, contactName);
   if (phone) ai.mobile = phone;
   if (action === 'confirmed' || action === 'confirm') {
     await saveSmsFromAi(ai, env, cfg, phone);
@@ -379,33 +391,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
         noteFields.push(`Time: ${t.label}`);
       }
     }
-    const newAddrHasNumber = /\d/.test(ai.address || '');
-    const oldAddrHasNumber = /\d/.test(target.location || '');
-    if (ai.address && ai.address !== target.location && (newAddrHasNumber || !oldAddrHasNumber)) {
-      changes.LOCATION = [`LOCATION:${icsEsc(ai.address)}`];
-      replyLines.push(`Updated address: ${ai.address}`);
-      noteFields.push(`Address: ${ai.address}`);
-    }
-    if (ai.service && ai.service !== target.service) {
-      changes['X-FB-SERVICE'] = [`X-FB-SERVICE:${icsEsc(ai.service)}`];
-      replyLines.push(`Updated service: ${ai.service}`);
-      noteFields.push(`Service: ${ai.service}`);
-    }
-    if (ai.price && ai.price !== target.price) {
-      changes['X-FB-PRICE'] = [`X-FB-PRICE:${icsEsc(ai.price)}`];
-      replyLines.push(`Updated price: ${ai.price}`);
-      noteFields.push(`Price: ${ai.price}`);
-    }
-    if (changes['X-FB-SERVICE'] || changes['X-FB-PRICE']) {
-      changes.SUMMARY = [`SUMMARY:${icsEsc(buildSummary(target.name || 'SMS Customer', ai.service || target.service, ai.price || target.price))}`];
-    }
-    if (ai.vehicle) {
-      const descVehicle = (target.description.match(/Vehicle:\s*(.+)/i) || [])[1]?.trim() || '';
-      if (ai.vehicle !== descVehicle) {
-        replyLines.push(`Updated vehicle: ${ai.vehicle}`);
-        noteFields.push(`Vehicle: ${ai.vehicle}`);
-      }
-    }
+    // SMS update only changes time — address/service/price/vehicle are intentionally skipped
     if (!replyLines.length) {
       await bark(env, `ℹ️ Booking updated: no changes detected`, `Phone: ${phone}`, '');
       return null;
