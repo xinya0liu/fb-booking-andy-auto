@@ -1305,9 +1305,7 @@ function buildReminderMessage(e, cfg, env) {
   const clock = `${p.h % 12 || 12}${p.min ? ':' + pad(p.min) : ''}${p.h < 12 ? 'am' : 'pm'}`;
   const when = `${p.d}/${p.m} ${WD_LONG[dowOf(p)]} ${clock}`;
   const lines = ['Hi! Just a reminder of your booking tomorrow with Andy Auto AC Regas:'];
-  lines.push(`Time: ${when}`);
-  if (e.location) lines.push(`Address: ${e.location}`);
-  lines.push('', env.CONFIRM_FOOTER || 'Any changes, reply here or call Andy on 0478 701 289. See you then!');
+  lines.push(`Time: ${when}. See you then!`);
   return lines.join('\n');
 }
 
