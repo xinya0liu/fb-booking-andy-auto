@@ -391,7 +391,20 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
         noteFields.push(`Time: ${t.label}`);
       }
     }
-    // SMS update only changes time — address/service/price/vehicle are intentionally skipped
+    // address and vehicle are intentionally skipped — SMS update is for time/service/price only
+    if (ai.service && ai.service !== target.service) {
+      changes['X-FB-SERVICE'] = [`X-FB-SERVICE:${icsEsc(ai.service)}`];
+      replyLines.push(`Updated service: ${ai.service}`);
+      noteFields.push(`Service: ${ai.service}`);
+    }
+    if (ai.price && ai.price !== target.price) {
+      changes['X-FB-PRICE'] = [`X-FB-PRICE:${icsEsc(ai.price)}`];
+      replyLines.push(`Updated price: ${ai.price}`);
+      noteFields.push(`Price: ${ai.price}`);
+    }
+    if (changes['X-FB-SERVICE'] || changes['X-FB-PRICE']) {
+      changes.SUMMARY = [`SUMMARY:${icsEsc(buildSummary(target.name || 'SMS Customer', ai.service || target.service, ai.price || target.price))}`];
+    }
     if (!replyLines.length) {
       await bark(env, `ℹ️ Booking updated: no changes detected`, `Phone: ${phone}`, '');
       return null;
