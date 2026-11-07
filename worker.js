@@ -621,7 +621,6 @@ Rules:
 ${ownerRule}
 ${contactNameLine}
 - Leave a field as "" if not mentioned. Do not guess or invent anything.
-- Messages are labeled "Us" (business owner) or "Customer". Only extract service, price, and address from "Customer" messages — never from "Us" messages.
 - The contact name is provided for name identification only. Do not use it as the service address.
 - notes: only info the technician needs on-site that is NOT captured in other fields — e.g. gate code, parking instructions, specific symptom, part needed. IMPORTANT EXCEPTION: if the customer is coming to Andy's location (not a mobile visit to the customer), always write "Customer coming to us". Do NOT include: customer name, service breakdown, price reasoning, "mobile service at home", "time customer accepted", or any AI reasoning. Leave "" if nothing genuinely useful.
 
