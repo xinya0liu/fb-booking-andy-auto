@@ -329,9 +329,7 @@ function trimToLastConfirmation(conversationText) {
 }
 
 async function doKeywordBooking(conversationText, phone, action, env, cfg, contactName = '') {
-  const textForAi = (action === 'updated' || action === 'update')
-    ? trimToLastConfirmation(conversationText)
-    : conversationText;
+  const textForAi = trimToLastConfirmation(conversationText);
   const ai = await aiFromSmsChat(textForAi, cfg, env, contactName);
   if (phone) ai.mobile = phone;
   if (action === 'confirmed' || action === 'confirm') {
