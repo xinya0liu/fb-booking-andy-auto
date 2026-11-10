@@ -329,7 +329,9 @@ function trimToLastConfirmation(conversationText) {
 }
 
 async function doKeywordBooking(conversationText, phone, action, env, cfg, contactName = '') {
-  const textForAi = trimToLastConfirmation(conversationText);
+  const textForAi = (action === 'updated' || action === 'update')
+    ? trimToLastConfirmation(conversationText)
+    : conversationText;
   const ai = await aiFromSmsChat(textForAi, cfg, env, contactName);
   if (phone) ai.mobile = phone;
   if (action === 'confirmed' || action === 'confirm') {
@@ -619,6 +621,7 @@ Rules:
 ${ownerRule}
 ${contactNameLine}
 - Leave a field as "" if not mentioned. Do not guess or invent anything.
+- If the conversation contains a previous ✅ Andy Auto AC Regas confirmation, ignore the time from that old confirmation. Only use the most recently agreed time between Andy and the customer.
 - The contact name is provided for name identification only. Do not use it as the service address.
 - notes: only info the technician needs on-site that is NOT captured in other fields — e.g. gate code, parking instructions, specific symptom, part needed. IMPORTANT EXCEPTION: if the customer is coming to Andy's location (not a mobile visit to the customer), always write "Customer coming to us". Do NOT include: customer name, service breakdown, price reasoning, "mobile service at home", "time customer accepted", or any AI reasoning. Leave "" if nothing genuinely useful.
 
