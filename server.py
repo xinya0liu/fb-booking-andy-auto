@@ -52,10 +52,20 @@ def decode_text(text, attributed_body):
         return text
     if not attributed_body:
         return ''
+    blob = attributed_body if isinstance(attributed_body, bytes) else bytes(attributed_body)
     try:
-        blob = attributed_body if isinstance(attributed_body, bytes) else bytes(attributed_body)
-        if blob[:1] != b'\x04':
-            return ''
+        from Foundation import NSData, NSUnarchiver
+        data = NSData.dataWithBytes_length_(blob, len(blob))
+        obj = NSUnarchiver.unarchiveObjectWithData_(data)
+        if obj and hasattr(obj, 'string'):
+            s = str(obj.string())
+            if s:
+                return s
+    except Exception:
+        pass
+    if blob[:1] != b'\x04':
+        return ''
+    try:
         best = b''
         for s in re.findall(rb'[a-zA-Z][\x20-\x7e]{3,}', blob):
             if s in _TS_SKIP:
