@@ -91,12 +91,18 @@ def query(phone):
             cur.execute("SELECT ROWID FROM handle WHERE id LIKE ?", (f"%{p}%",))
             handles.extend(r[0] for r in cur.fetchall())
         handles = list(set(handles))
-        if not handles:
-            con.close()
-            return []
-        ph = ",".join("?" * len(handles))
-        cur.execute(f"SELECT DISTINCT chat_id FROM chat_handle_join WHERE handle_id IN ({ph})", handles)
-        chats = [r[0] for r in cur.fetchall()]
+        chats = []
+        if handles:
+            ph = ",".join("?" * len(handles))
+            cur.execute(f"SELECT DISTINCT chat_id FROM chat_handle_join WHERE handle_id IN ({ph})", handles)
+            chats = [r[0] for r in cur.fetchall()]
+        if not chats:
+            # Fallback for SMS conversations that lack chat_handle_join entries
+            for p in variants:
+                cur.execute("SELECT ROWID FROM chat WHERE chat_identifier LIKE ?", (f"%{p}%",))
+                chats = [r[0] for r in cur.fetchall()]
+                if chats:
+                    break
         if not chats:
             con.close()
             return []
@@ -182,11 +188,12 @@ def scan_keywords():
             con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
             cur = con.cursor()
             cur.execute("""
-                SELECT m.ROWID, COALESCE(m.text, ''), h.id, m.attributedBody, COALESCE(m.service, 'iMessage')
+                SELECT m.ROWID, COALESCE(m.text, ''), COALESCE(h.id, c.chat_identifier), m.attributedBody, COALESCE(m.service, c.service_name, 'iMessage')
                 FROM message m
                 JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-                JOIN chat_handle_join chj ON cmj.chat_id = chj.chat_id
-                JOIN handle h ON chj.handle_id = h.ROWID
+                JOIN chat c ON cmj.chat_id = c.ROWID
+                LEFT JOIN chat_handle_join chj ON cmj.chat_id = chj.chat_id
+                LEFT JOIN handle h ON chj.handle_id = h.ROWID
                 WHERE m.is_from_me = 1
                   AND m.ROWID > ?
                   AND (
