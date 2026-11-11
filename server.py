@@ -56,12 +56,16 @@ def decode_text(text, attributed_body):
         blob = attributed_body if isinstance(attributed_body, bytes) else bytes(attributed_body)
         if blob[:1] != b'\x04':
             return ''
+        best = b''
         for s in re.findall(rb'[a-zA-Z][\x20-\x7e]{3,}', blob):
             if s in _TS_SKIP:
                 continue
             if s.startswith(b'NS') or s.startswith(b'__k') or s.startswith(b'CF'):
                 continue
-            return s.decode('utf-8', errors='replace')
+            if len(s) > len(best):
+                best = s
+        if best:
+            return best.decode('utf-8', errors='replace')
     except Exception:
         pass
     return ''
