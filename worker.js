@@ -1545,17 +1545,16 @@ async function printPage(env, origin, dateParam = '') {
     } else if (mobile) {
       whoHtml = `<span class="who-mobile-only">${mobile}</span>`;
     } else {
-      whoHtml = `<span class="who-empty">—</span>`;
+      whoHtml = '';
     }
-    const dash = v => v || '<span class="empty-cell">—</span>';
     return `<tr>
       <td class="n">${i + 1}</td>
       <td class="src"><span class="${srcClass}">${srcLabel}</span></td>
       <td class="time">${clock}</td>
-      <td class="svc">${dash(service)}</td>
-      <td class="price">${dash(price)}</td>
-      <td class="veh">${dash(vehicle)}</td>
-      <td class="addr">${addr.street || addr.suburb ? addrHtml : '<span class="empty-cell">—</span>'}</td>
+      <td class="svc">${service}</td>
+      <td class="price">${price}</td>
+      <td class="veh">${vehicle}</td>
+      <td class="addr">${addr.street || addr.suburb ? addrHtml : ''}</td>
       <td class="who">${whoHtml}</td>
     </tr>`;
   }).join('');
@@ -1601,15 +1600,17 @@ async function printPage(env, origin, dateParam = '') {
   h2 { font-size: 0.95em; color: #555; margin-top: 0; font-weight: normal; margin-bottom: 16px; }
   table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
   th { background: #222; color: #fff; padding: 7px 10px; text-align: left; font-weight: normal; white-space: nowrap; }
-  th.col-n { width: 14px; padding-left: 4px; padding-right: 4px; }
+  th.col-n { width: 14px; padding-left: 10px; padding-right: 4px; text-align: left; }
   th.col-src { width: 26px; padding-left: 2px; padding-right: 2px; }
   th.col-time { width: 64px; }
   td { padding: 9px 10px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
-  td.n { color: #aaa; width: 14px; font-size: 0.75em; padding: 9px 4px; text-align: right; }
+  td.n { color: #aaa; width: 14px; font-size: 0.75em; padding: 9px 4px 9px 10px; text-align: left; }
   td.src { padding: 9px 2px; width: 26px; text-align: center; }
-  .badge-fb, .badge-sms { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 0.65em; font-weight: bold; color: #fff; letter-spacing: 0.2px; }
-  .badge-fb { background: #1877f2; }
-  .badge-sms { background: #2a7a2a; }
+  /* Grayscale-friendly: SMS is a filled black pill, FB is an outlined one.
+     Distinct on a B&W printer without relying on color. */
+  .badge-fb, .badge-sms { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 0.65em; font-weight: bold; letter-spacing: 0.2px; line-height: 1.3; }
+  .badge-sms { background: #111; color: #fff; }
+  .badge-fb { background: #fff; color: #111; border: 1px solid #111; padding: 0 4px; }
   td.time { white-space: nowrap; font-weight: bold; font-size: 1.05em; }
   td.svc { max-width: 170px; word-break: break-word; }
   td.price { white-space: nowrap; }
@@ -1621,7 +1622,6 @@ async function printPage(env, origin, dateParam = '') {
   td.who .who-name { display: block; font-weight: bold; }
   td.who .who-mobile { display: block; color: #555; font-size: 0.9em; }
   td.who .who-mobile-only { display: block; color: #111; }
-  td.who .who-empty, .empty-cell { color: #ccc; }
   .empty { color: #888; font-style: italic; }
   .toggle { display: flex; gap: 6px; margin-bottom: 14px; align-items: center; flex-wrap: nowrap; overflow-x: hidden; }
   .toggle a { padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.85em; border: 1px solid #bbb; color: #333; background: #f5f5f5; white-space: nowrap; }
