@@ -604,7 +604,7 @@ Rules:
 async function aiFromSmsChat(conversationText, cfg, env, contactName = '') {
   const t = todayInTz(cfg.tz);
   const contactNameLine = contactName
-    ? `- The customer's name from the address book is: "${contactName}". Use this as the name field. It takes priority over any name mentioned in the conversation.`
+    ? `- The customer's address book label is: "${contactName}". This label is the ONLY source for the \`name\` field — use it even if it looks odd. CRITICAL: it is NOT a source for any other field. Never extract date, time, address, service, price, vehicle, or mobile from this label. Andy often writes past booking dates (e.g. "18/10 Sunday 3pm", "Mon 2pm", "21/10") into the label as an internal reminder — those dates/times are historical, not the new booking. Get date/time/address/etc. only from the conversation messages below.`
     : `- For the customer's name: use whatever name appears in the conversation, or empty string if unknown.`;
   const ownerRule = `- The business owner's name is Andy. Never use "Andy" as the customer's name.`;
   const prompt =
@@ -621,8 +621,7 @@ Rules:
 ${ownerRule}
 ${contactNameLine}
 - Leave a field as "" if not mentioned. Do not guess or invent anything.
-- If the conversation contains a previous ✅ Andy Auto AC Regas confirmation, ignore the time from that old confirmation. Only use the most recently agreed time between Andy and the customer.
-- The contact name is provided for name identification only. Do not use it as the service address.
+- If the conversation contains a previous ✅ Andy Auto AC Regas confirmation, that is from a past booking — ignore its date/time entirely. Only use the most recently agreed time between Andy and the customer in the latest exchange.
 - notes: only info the technician needs on-site that is NOT captured in other fields — e.g. gate code, parking instructions, specific symptom, part needed. IMPORTANT EXCEPTION: if the customer is coming to Andy's location (not a mobile visit to the customer), always write "Customer coming to us". Do NOT include: customer name, service breakdown, price reasoning, "mobile service at home", "time customer accepted", or any AI reasoning. Leave "" if nothing genuinely useful.
 
 Conversation:
@@ -635,7 +634,7 @@ ${conversationText}`;
     input_schema: {
       type: 'object',
       properties: {
-        name: str("Customer's real name. If the contact label looks like a date/time (e.g. '21/10 Monday 3pm'), leave empty — that is a business label, not the customer's name. Leave empty if unknown."),
+        name: str("Customer's real name. If the only name source is a date/time-like label (e.g. '21/10 Monday 3pm', '18/10 Sun', '3pm'), leave empty — that is Andy's internal booking label, not the customer's name. Leave empty if unknown."),
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
         end: str('If the conversation mentions an arrival window (e.g. "around 3:30–4pm", "between 2 and 2:30"), return the window END time in HH:MM 24-hour format (e.g. "16:00"). This is used to show the customer a range in the confirmation. Leave "" if only a single arrival time is mentioned with no range.'),

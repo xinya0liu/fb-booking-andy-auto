@@ -146,12 +146,29 @@ def query(phone):
         print(f"query error: {e}", flush=True)
         return []
 
+_NAME_PREFIX_PATTERNS = [
+    r'^\d{1,2}[/\-.]\d{1,2}(?:[/\-.]\d{2,4})?\b',  # 18/10, 18-10-26, 18.10.2026
+    r'^(?:mon|tue|wed|thu|fri|sat|sun)\w*\b',      # Monday / Sun
+    r'^\d{1,2}(?::\d{2})?\s*(?:am|pm)\b',          # 3pm, 3:30pm
+    r'^(?:today|tomorrow|tonight|yesterday|this|next|arvo|morning|afternoon|evening|noon)\b',
+    r'^[-,.:/\s]+',                                # separator garbage between tokens
+]
+
 def clean_contact_name(name):
-    # Strip date/time prefix like "13/10 Monday 11pm" or "Monday 5pm"
-    cleaned = re.sub(
-        r'^(?:\d{1,2}/\d{1,2}\s+)?(?:mon|tue|wed|thu|fri|sat|sun)\w*\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)',
-        '', name, flags=re.IGNORECASE
-    ).strip()
+    """Strip date/day/time prefix labels Andy uses on contact cards.
+
+    Handles any combination like '18/10 Sunday 3pm Bob', '18/10 Sun Bob',
+    '18/10 Bob', 'Mon 5pm Bob', 'Sun 3pm Bob' → 'Bob' (or '' if the whole
+    label is a date).
+    """
+    if not name:
+        return ''
+    cleaned = name.strip()
+    prev = None
+    while prev != cleaned and cleaned:
+        prev = cleaned
+        for pat in _NAME_PREFIX_PATTERNS:
+            cleaned = re.sub(pat, '', cleaned, flags=re.IGNORECASE).strip()
     return cleaned
 
 def get_contact_name(phone):
@@ -225,6 +242,8 @@ def scan_keywords():
             for rowid, sql_text, phone, attributed_body, service in rows:
                 text = decode_text(sql_text, attributed_body).lower().strip()
                 if not text:
+                    ab_size = len(attributed_body) if attributed_body else 0
+                    print(f"⚠️  ROWID {rowid} from {phone}: decode_text returned empty (attributedBody {ab_size}B). Skipping.", flush=True)
                     last_rowid = max(last_rowid, rowid)
                     save_last_rowid(last_rowid)
                     continue
@@ -235,6 +254,8 @@ def scan_keywords():
                 elif 'booking cancelled' in text:
                     action = 'cancelled'
                 else:
+                    if not sql_text and attributed_body:
+                        print(f"ROWID {rowid} from {phone}: decoded from attributedBody but no keyword. Text: {text[:80]!r}", flush=True)
                     last_rowid = max(last_rowid, rowid)
                     save_last_rowid(last_rowid)
                     continue
