@@ -13,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "andy-auto-db",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+      "database_id": "ebd759b7-bfec-4f93-9d5e-403c9549cc7b"
     }
   ],
   "triggers": {
