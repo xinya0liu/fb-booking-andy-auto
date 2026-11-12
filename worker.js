@@ -1443,7 +1443,7 @@ function normalizeAddress(addr) {
 // Split a free-form address into { street, suburb } for two-line print display.
 // Works off the last comma, else falls back to the last street-suffix word
 // (Road/St/Ave/etc). If neither heuristic matches, returns the address whole.
-const STREET_SUFFIX_RE = /^(road|rd|street|st|avenue|ave|drive|dr|lane|ln|court|ct|place|pl|way|highway|hwy|crescent|cres|terrace|tce|close|cl|parade|pde|boulevard|blvd|boulevarde|circuit|cct|esplanade|esp)[,.]?$/i;
+const STREET_SUFFIX_RE = /^(road|rd|street|st|avenue|ave|drive|dr|lane|ln|court|ct|place|pl|way|highway|hwy|crescent|cres|cr|terrace|tce|close|cl|parade|pde|boulevard|blvd|boulevarde|circuit|cct|esplanade|esp|grove|grv|gr|square|sq|parkway|pkwy|mews|link|rise|quay|bay)[,.]?$/i;
 function splitAddress(addr) {
   const s = normalizeAddress(addr);
   if (!s) return { street: '', suburb: '' };
@@ -1525,12 +1525,13 @@ async function printPage(env, origin, dateParam = '') {
     const isSms = !e.psid;
     // Always parse summary so manual Calendar title edits (e.g. price change) take precedence
     const summaryParsed = parseSummaryFields(e.summary || '');
-    // Prefer description's Service line so multi-item services (e.g. "Change O-ring,
-    // replace valves and regas") are preserved verbatim rather than truncated by
-    // summary parsing. Summary parse still wins for price so manual calendar edits
-    // to the title take effect.
+    // Prefer the Calendar title (summary) because Andy often extends the
+    // service description there after the booking is created ("Regas" →
+    // "Change O-ring, replace valves and regas"). Fall back to the
+    // description's Service line (original AI extraction) if the summary
+    // parse yields nothing.
     const descService = desc.match(/^Service:\s*(.+)$/im)?.[1]?.trim() || '';
-    let service = descService || summaryParsed.service || e.service || '';
+    let service = summaryParsed.service || descService || e.service || '';
     let price = summaryParsed.price || e.price || '';
     let vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || summaryParsed.vehicle || e.vehicle || '';
     services.push(service);
