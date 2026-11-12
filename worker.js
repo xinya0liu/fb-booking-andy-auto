@@ -319,20 +319,71 @@ async function doConfirm(ctx) {
 
 // ================= SMS / 电话预约 =================
 
+// A message starts at a "[DD/MM HH:MM] " timestamp. Everything until the next
+// timestamp belongs to the same message (for multi-line replies like ✅ blocks).
+const MSG_START_RE = /^\[\d{1,2}\/\d{1,2}\s+\d{1,2}:\d{2}\]\s/;
+
+// Trim conversation to only messages AFTER the last ✅/🔄 Us reply (including
+// its multi-line body). Used for UPDATED action where only post-confirmation
+// changes matter.
 function trimToLastConfirmation(conversationText) {
   const lines = conversationText.split('\n');
-  let lastIdx = -1;
+  let lastConfIdx = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (/Us:.*[✅🔄]/.test(lines[i])) lastIdx = i;
+    if (/Us:.*[✅🔄]/.test(lines[i])) lastConfIdx = i;
   }
-  return lastIdx >= 0 ? lines.slice(lastIdx + 1).join('\n') : conversationText;
+  if (lastConfIdx < 0) return conversationText;
+  // Walk past the entire multi-line ✅ body until we hit the next message
+  let end = lastConfIdx + 1;
+  while (end < lines.length && !MSG_START_RE.test(lines[end])) end++;
+  return lines.slice(end).join('\n');
+}
+
+// Replace the Time: line in every ✅/🔄 Us message with a redaction marker.
+// For the CONFIRMED/UPDATED action, every ✅/🔄 in history is from a PAST
+// booking (the current trigger has not been replied to yet). Keeping
+// address/vehicle context but removing stale time/date fixes the common
+// "time came out as 18/10 Sunday 3pm, in the past" failure.
+function redactOldConfirmationTimes(conversationText) {
+  const lines = conversationText.split('\n');
+  const confIdx = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/Us:.*[✅🔄]/.test(lines[i])) confIdx.push(i);
+  }
+  if (!confIdx.length) return conversationText;
+  const out = lines.slice();
+  for (const start of confIdx) {
+    let i = start + 1;
+    while (i < out.length && !MSG_START_RE.test(out[i])) {
+      if (/^\s*Time:\s*/i.test(out[i])) out[i] = '  [past booking time — ignore]';
+      i++;
+    }
+  }
+  return out.join('\n');
+}
+
+// Append a trigger marker so the AI knows which message is the actual
+// booking trigger, especially in long histories.
+function appendTriggerMarker(conversationText, action) {
+  const label = action === 'updated' || action === 'update' ? 'update'
+    : action === 'cancelled' || action === 'cancel' ? 'cancellation'
+    : 'booking';
+  return conversationText + `\n\n===\nThe LAST "Us: Booking ${action}" message above is the trigger for this ${label}. Extract details from the exchange immediately leading up to it. Older ✅ messages are from past bookings — their time is redacted, but address/vehicle may still be reused if the customer has not provided new ones.`;
 }
 
 async function doKeywordBooking(conversationText, phone, action, env, cfg, contactName = '') {
-  const textForAi = (action === 'updated' || action === 'update')
-    ? trimToLastConfirmation(conversationText)
-    : conversationText;
+  let textForAi;
+  if (action === 'updated' || action === 'update') {
+    textForAi = trimToLastConfirmation(conversationText);
+  } else if (action === 'confirmed' || action === 'confirm') {
+    textForAi = redactOldConfirmationTimes(conversationText);
+  } else {
+    textForAi = conversationText;
+  }
+  textForAi = appendTriggerMarker(textForAi, action);
+  console.log(`doKeywordBooking action=${action} phone=${phone} conv=${conversationText.length}→${textForAi.length} chars`);
   const ai = await aiFromSmsChat(textForAi, cfg, env, contactName);
+  console.log(`AI extracted: name=${ai.name!==undefined} date=${!!ai.date} start=${!!ai.start} addr=${!!ai.address} svc=${!!ai.service} price=${!!ai.price}`);
   if (phone) ai.mobile = phone;
   if (action === 'confirmed' || action === 'confirm') {
     await saveSmsFromAi(ai, env, cfg, phone);
