@@ -155,3 +155,42 @@ Andy 打开审批页面
 - [x] SIGTERM handler（日志记录崩溃原因）
 - [x] plist 加 ThrottleInterval 10（防止崩溃死循环）
 - [x] upgrade.sh 一键升级（自动更新 server.py + plist + 重启）
+
+---
+
+## 已完成 ✅ — 2026-11（SMS 稳定性 + 打印页改版）
+
+**SMS 触发稳定性（server.py）**
+- [x] macOS Sonoma 的 attributedBody 解码：NSUnarchiver（PyObjC）正确读取纯 SMS 的消息文本
+- [x] Heuristic fallback（PyObjC 不可用时）：过滤 plist 元数据（`$version`/`$archiver`/`kIM*`），返回最长的候选字符串
+- [x] `clean_contact_name` 重写：剥离任意组合的日期/星期/时间前缀（如 `18/10 Sunday 3pm Bob` → `Bob`，`18/10 Sun` → ``）
+- [x] `scan_keywords` SQL 加 LEFT JOIN + `chat_identifier` fallback，SMS 对话缺少 `chat_handle_join` 时也能查到
+- [x] decode 失败时打日志（原本静默跳过，无法定位问题）
+
+**AI 提取稳定性（worker.js）**
+- [x] `trimToLastConfirmation` 修复多行 ✅ 块的 bug：原本只跳过标题行，`Time:` / `See you then!` 等后续行漏入 AI 视野
+- [x] `redactOldConfirmationTimes`：对 CONFIRMED action 把历史 ✅ 的 `Time:` 行替换成 `[past booking]`，地址/车型保留，旧时间不再干扰
+- [x] `appendTriggerMarker`：对话末尾明示"最后那条 Booking confirmed 才是触发点，旧 ✅ 的时间已被 redact"
+- [x] Prompt 加硬：contact label 永远不能作为日期/时间/地址/服务/价格/车型/手机号的来源
+- [x] `service` schema 允许多项目描述（如 `Change O-ring, replace valves and regas`），不再被压缩成 1-3 字
+- [x] `doKeywordBooking` 加日志（对话长度、AI 提取字段），失败可追溯
+
+**地址规范化**
+- [x] `normalizeAddress`：剥离 state（QLD/NSW/VIC/…）、country（Australia）、4 位邮编
+- [x] 自动把末尾的 `Unit X`/`Apt X`/`Flat X` 移到地址前端
+- [x] 三处调用：AI 后处理、历史地址 fallback、`splitAddress`（显示层），不用迁移数据
+
+**打印页改版（`/print`）**
+- [x] Service 从 description 读（保留完整多项描述），覆盖掉旧 `parseSummaryFields` 的首词截断
+- [x] `parseSummaryFields` 无年份时整段当 service，不再被首个空格切开
+- [x] 地址智能分两行：街道 + suburb（通过最后一个 comma，或街道后缀 Road/St/Ave/…）
+- [x] Customer 和 Mobile 合并一列（名字加粗，电话灰色小字；name==mobile 时去重；email 格式识别为灰色小字）
+- [x] FB/SMS pill 黑白友好：SMS 黑底白字实心，FB 白底黑字描边
+- [x] 列宽重分配：# 和 Src 收窄，Service/Vehicle/Address 加宽，Customer 定宽 130px
+- [x] 去除 SMS 行灰色背景（Src pill 已足够区分来源）
+- [x] 空单元格留白（方便 Andy 手写），不显示 `—`
+- [x] # 列左对齐
+- [x] h2 简化为 `N bookings · $X total`
+- [x] 📝 Notes 栏：顶部可编辑文本框，防抖自动存 Cloudflare KV，每天独立 key，60 天 TTL；空的时候打印不显示
+- [x] 打印时字号 1.2x（0.94em 表格字号）+ 紧凑 padding
+- [x] 1-9 单压缩一页；10+ 自动在第 10 行强制换页，避免被截断
