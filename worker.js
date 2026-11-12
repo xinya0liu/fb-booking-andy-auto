@@ -1499,11 +1499,9 @@ async function printPage(env, origin, dateParam = '') {
 
   const services = [];
   const priceTotals = [];
-  const times = [];
   const rows = bookings.map((e, i) => {
     const p = localParts(e.startMs, cfg.tz);
     const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
-    times.push(clock);
     const desc = e.description || '';
     const isSms = !e.psid;
     // Always parse summary so manual Calendar title edits (e.g. price change) take precedence
@@ -1569,7 +1567,6 @@ async function printPage(env, origin, dateParam = '') {
   const totalPrice = priceTotals.reduce((a, b) => a + b, 0);
   const summaryBits = [`${bookings.length} booking${bookings.length !== 1 ? 's' : ''}`];
   if (totalPrice > 0) summaryBits.push(`$${totalPrice.toLocaleString()} total`);
-  if (times.length) summaryBits.push(`${times[0]} – ${times[times.length - 1]}`);
   const summaryLine = summaryBits.join(' · ');
 
   const tableHtml = bookings.length === 0 ? '' : `
