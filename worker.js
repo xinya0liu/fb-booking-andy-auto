@@ -1931,7 +1931,9 @@ function render() {
     return;
   }
   const rows = currentRows.map(v => {
-    const years = v.year_start === v.year_end ? v.year_start : v.year_start + '-' + v.year_end;
+    // year_end === 2100 is the sentinel for "open-ended / still in production"
+    const years = v.year_end >= 2100 ? v.year_start + '+'
+      : (v.year_start === v.year_end ? v.year_start : v.year_start + '-' + v.year_end);
     const refClass = v.refrigerant === 'R1234yf' ? 'r1234yf' : '';
     return \`<tr>
       <td><strong>\${esc(v.make)}</strong></td>
