@@ -133,6 +133,11 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return vehicleLookup(url.searchParams, env);
     }
+    // 冷媒单价（$/kg）—— 偶尔调价，存 KV
+    if (url.pathname === '/refrigerant-prices' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return refrigerantPricesHandler(req, env);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -1806,6 +1811,38 @@ function normalizeVehicle(v) {
   };
 }
 
+// Refrigerant unit prices in $/kg. Stored in BARK_COOLDOWN KV under a single
+// JSON key so Andy can adjust whenever the supplier changes rates.
+const PRICES_KV_KEY = 'refrigerant_prices';
+const REFRIGERANTS = ['R134a', 'R1234yf', 'R12'];
+
+async function loadRefrigerantPrices(env) {
+  if (!env.BARK_COOLDOWN) return {};
+  try {
+    const v = await env.BARK_COOLDOWN.get(PRICES_KV_KEY);
+    return v ? JSON.parse(v) : {};
+  } catch { return {}; }
+}
+
+async function refrigerantPricesHandler(req, env) {
+  if (req.method === 'GET') {
+    return jsonResponse(await loadRefrigerantPrices(env));
+  }
+  if (req.method === 'POST') {
+    const body = await req.json();
+    const clean = {};
+    for (const r of REFRIGERANTS) {
+      const n = Number(body[r]);
+      if (Number.isFinite(n) && n >= 0 && n < 10000) clean[r] = n;
+    }
+    if (env.BARK_COOLDOWN) {
+      await env.BARK_COOLDOWN.put(PRICES_KV_KEY, JSON.stringify(clean));
+    }
+    return jsonResponse({ ok: true, prices: clean });
+  }
+  return jsonResponse({ error: 'method not allowed' }, 405);
+}
+
 function vehiclesAdminPage(env, origin) {
   const secret = encodeURIComponent(env.VERIFY_TOKEN || '');
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -1819,6 +1856,13 @@ function vehiclesAdminPage(env, origin) {
   .bar input[type=search] { flex: 1; min-width: 180px; padding: 7px 10px; font-size: 0.95em; border: 1px solid #ccc; border-radius: 6px; }
   .search-hint { font-size: 0.78em; color: #888; white-space: nowrap; }
   .search-hint .year-chip { display: inline-block; background: #efe; border: 1px solid #9c9; color: #060; padding: 1px 6px; border-radius: 10px; font-weight: bold; margin-right: 4px; }
+  .prices-bar { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; padding: 8px 12px; background: #fff8e8; border: 1px solid #f0d890; border-radius: 6px; font-size: 0.88em; flex-wrap: wrap; }
+  .prices-bar .prices-label { font-weight: bold; color: #7a5a00; }
+  .prices-bar label { display: flex; align-items: center; gap: 5px; }
+  .prices-bar input { width: 70px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em; }
+  .prices-status { font-size: 0.82em; color: #888; margin-left: auto; }
+  td.cost { white-space: nowrap; color: #060; font-weight: bold; }
+  td.cost .cost-empty { color: #ccc; font-weight: normal; }
   .btn { padding: 7px 14px; border-radius: 6px; font-size: 0.9em; border: 1px solid #2a7a2a; color: #fff; background: #2a7a2a; cursor: pointer; }
   .btn:hover { background: #1e5c1e; }
   .btn.alt { background: #fff; color: #333; border-color: #ccc; }
@@ -1851,6 +1895,12 @@ function vehiclesAdminPage(env, origin) {
 <h1>Andy Auto – Vehicle Refrigerant DB</h1>
 <div class="sub">Lookup data for AC regas quoting. R1234yf prices ~5-10x more than R134a — always double-check that field.</div>
 <div id="msg"></div>
+<div class="prices-bar">
+  <span class="prices-label">💰 Refrigerant unit price ($/kg):</span>
+  <label>R134a <input type="number" id="price-R134a" min="0" step="0.5" onchange="savePrices()" oninput="recomputeCosts()"></label>
+  <label>R1234yf <input type="number" id="price-R1234yf" min="0" step="1" onchange="savePrices()" oninput="recomputeCosts()"></label>
+  <span id="prices-status" class="prices-status"></span>
+</div>
 <div class="bar">
   <input type="search" id="q" placeholder="Search e.g. 'camry 2013', 'hilux', 'mazda cx-5 2018'…" oninput="debouncedLoad()">
   <span id="search-hint" class="search-hint"></span>
@@ -1898,9 +1948,56 @@ function vehiclesAdminPage(env, origin) {
 <script>
 const SECRET = '${secret}';
 const API = '${origin}/vehicles/api?secret=' + SECRET;
+const PRICES_API = '${origin}/refrigerant-prices?secret=' + SECRET;
 let currentRows = [];
-let debounceTimer;
+let currentPrices = {};
+let debounceTimer, priceSaveTimer;
 function debouncedLoad() { clearTimeout(debounceTimer); debounceTimer = setTimeout(load, 220); }
+
+async function loadPrices() {
+  try {
+    const r = await fetch(PRICES_API);
+    currentPrices = await r.json();
+    for (const ref of ['R134a', 'R1234yf']) {
+      const el = document.getElementById('price-' + ref);
+      if (el && currentPrices[ref] != null) el.value = currentPrices[ref];
+    }
+  } catch {}
+}
+
+function savePrices() {
+  const body = {};
+  for (const ref of ['R134a', 'R1234yf', 'R12']) {
+    const el = document.getElementById('price-' + ref);
+    if (el && el.value !== '') body[ref] = Number(el.value);
+  }
+  currentPrices = body;
+  const status = document.getElementById('prices-status');
+  if (status) status.textContent = 'saving…';
+  clearTimeout(priceSaveTimer);
+  priceSaveTimer = setTimeout(async () => {
+    try {
+      await fetch(PRICES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (status) { status.textContent = 'saved'; setTimeout(() => { if (status.textContent === 'saved') status.textContent = ''; }, 1500); }
+    } catch { if (status) status.textContent = 'save failed'; }
+  }, 500);
+}
+
+function recomputeCosts() {
+  // Update costs in-place without re-fetching from server.
+  for (const ref of ['R134a', 'R1234yf', 'R12']) {
+    const el = document.getElementById('price-' + ref);
+    if (el) currentPrices[ref] = el.value === '' ? null : Number(el.value);
+  }
+  render();
+}
+
+function costCell(v) {
+  const price = currentPrices[v.refrigerant];
+  if (price == null || !Number.isFinite(Number(price))) return '<span class="cost-empty">—</span>';
+  const cost = v.charge_g * price / 1000;
+  return '$' + cost.toFixed(2);
+}
 function esc(s) { return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function flash(text, ok) {
   const m = document.getElementById('msg');
@@ -1942,6 +2039,7 @@ function render() {
       <td>\${years}</td>
       <td class="\${refClass}">\${esc(v.refrigerant)}</td>
       <td>\${v.charge_g}g</td>
+      <td class="cost">\${costCell(v)}</td>
       <td>\${esc(v.notes)}</td>
       <td class="actions">
         <button onclick="openEdit(\${v.id})">Edit</button>
@@ -1950,7 +2048,7 @@ function render() {
     </tr>\`;
   }).join('');
   tbl.innerHTML = \`<table><thead><tr>
-    <th>Make</th><th>Model</th><th>Variant</th><th>Years</th><th>Refrigerant</th><th>Charge</th><th>Notes</th><th></th>
+    <th>Make</th><th>Model</th><th>Variant</th><th>Years</th><th>Refrigerant</th><th>Charge</th><th>Cost</th><th>Notes</th><th></th>
   </tr></thead><tbody>\${rows}</tbody></table>\`;
 }
 function openAdd() {
@@ -2020,7 +2118,7 @@ async function del(id) {
     await load();
   } catch (err) { flash(err.message, false); }
 }
-load();
+loadPrices().then(load);
 </script>
 </body></html>`;
   return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8' } });
