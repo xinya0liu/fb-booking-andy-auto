@@ -603,7 +603,7 @@ Rules:
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
         end: str('If the conversation mentions an arrival window (e.g. "around 3:30–4pm", "between 2 and 2:30"), return the window END time in HH:MM 24-hour format (e.g. "16:00"). This is used to show the customer a range in the confirmation. Leave "" if only a single arrival time is mentioned with no range.'),
-        service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test". No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        service: str('Service type agreed with the customer. If one simple service, use 1-3 words (e.g. "Regas", "Pressure Test"). If multiple items are being done, list all of them separated by commas or "and" (e.g. "Change O-ring, replace valves and regas", "Compressor replacement + regas", "Vacuum, new gas, pressure test"). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. Preserve unit/flat numbers exactly as written (e.g. "2/32a Smith St" must stay as "2/32a Smith St", not "2 Smith St"). Do not include postcode, state (QLD) or country (Australia). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number. Leave \"\" if not mentioned."),
@@ -689,7 +689,7 @@ ${conversationText}`;
         date: str('YYYY-MM-DD, or "" if unknown'),
         start: str('HH:MM in 24-hour time, or "" if unknown'),
         end: str('If the conversation mentions an arrival window (e.g. "around 3:30–4pm", "between 2 and 2:30"), return the window END time in HH:MM 24-hour format (e.g. "16:00"). This is used to show the customer a range in the confirmation. Leave "" if only a single arrival time is mentioned with no range.'),
-        service: str('Service type in 1-3 words, e.g. "Regas", "Pressure Test". No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        service: str('Service type agreed with the customer. If one simple service, use 1-3 words (e.g. "Regas", "Pressure Test"). If multiple items are being done, list all of them separated by commas or "and" (e.g. "Change O-ring, replace valves and regas", "Compressor replacement + regas", "Vacuum, new gas, pressure test"). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         price: str('e.g. $150. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. Preserve unit/flat numbers exactly as written (e.g. "2/32a Smith St" must stay as "2/32a Smith St", not "2 Smith St"). Do not include postcode, state (QLD) or country (Australia). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number. Leave \"\" if not mentioned."),
@@ -1392,9 +1392,11 @@ function parseSummaryFields(summary) {
     service = withoutPrice.slice(0, yearIdx).trim();
     vehicle = withoutPrice.slice(yearIdx).trim();
   } else {
-    const parts = withoutPrice.split(/\s+/);
-    service = parts[0] || '';
-    vehicle = parts.slice(1).join(' ');
+    // No year found — treat the whole remainder as service. Vehicle lives in
+    // the description field; splitting on first space here would corrupt
+    // multi-word services like "Change O-ring, replace valves and regas".
+    service = withoutPrice;
+    vehicle = '';
   }
   return { service, price, vehicle };
 }
@@ -1433,7 +1435,12 @@ async function printPage(env, origin, dateParam = '') {
     const isSms = !e.psid;
     // Always parse summary so manual Calendar title edits (e.g. price change) take precedence
     const summaryParsed = parseSummaryFields(e.summary || '');
-    let service = summaryParsed.service || e.service || '';
+    // Prefer description's Service line so multi-item services (e.g. "Change O-ring,
+    // replace valves and regas") are preserved verbatim rather than truncated by
+    // summary parsing. Summary parse still wins for price so manual calendar edits
+    // to the title take effect.
+    const descService = desc.match(/^Service:\s*(.+)$/im)?.[1]?.trim() || '';
+    let service = descService || summaryParsed.service || e.service || '';
     let price = summaryParsed.price || e.price || '';
     let vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || summaryParsed.vehicle || e.vehicle || '';
     services.push(service);
