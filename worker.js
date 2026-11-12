@@ -1666,10 +1666,27 @@ async function printPage(env, origin, dateParam = '') {
     .toggle { display: none; }
     .print-btn { display: none; }
     #print-modal { display: none !important; }
-    table { zoom: 1; }
+    table { zoom: 1; font-size: 0.78em; }
     thead { display: table-header-group; }
     tr { page-break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    @page { size: A4 landscape; margin: 15mm; }
+    /* Compressed row rhythm so 9 bookings fit on a single A4 landscape page. */
+    th { padding: 4px 8px; }
+    td { padding: 4px 8px; }
+    td.n { padding: 4px 4px 4px 8px; font-size: 0.85em; }
+    td.src { padding: 4px 2px; }
+    td.time { font-size: 1em; }
+    td.addr, td.who { line-height: 1.2; }
+    h1 { font-size: 1.05em; margin-bottom: 1px; }
+    h2 { font-size: 0.82em; margin-bottom: 10px; }
+    .notes-box { padding: 6px 10px; margin-bottom: 10px; }
+    .notes-label { font-size: 0.72em; margin-bottom: 2px; }
+    .notes-print { font-size: 0.9em; line-height: 1.4; }
+    .equipment { padding: 6px 12px; margin-bottom: 8px; font-size: 0.85em; }
+    /* Over 9 bookings: start a new page at row 10 instead of silently
+       clipping the overflow. Only the 10th row forces a break; subsequent
+       rows flow naturally. */
+    tbody tr:nth-child(10) { page-break-before: always; }
+    @page { size: A4 landscape; margin: 10mm; }
     body { margin: 0; }
     th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
