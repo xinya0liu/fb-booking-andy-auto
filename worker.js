@@ -1666,22 +1666,23 @@ async function printPage(env, origin, dateParam = '') {
     .toggle { display: none; }
     .print-btn { display: none; }
     #print-modal { display: none !important; }
-    table { zoom: 1; font-size: 0.78em; }
+    table { zoom: 1; font-size: 0.94em; }
     thead { display: table-header-group; }
     tr { page-break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    /* Compressed row rhythm so 9 bookings fit on a single A4 landscape page. */
-    th { padding: 4px 8px; }
-    td { padding: 4px 8px; }
-    td.n { padding: 4px 4px 4px 8px; font-size: 0.85em; }
-    td.src { padding: 4px 2px; }
+    /* Row rhythm sized so 9 bookings still fit on a single A4 landscape
+       page while keeping the body text comfortable to read in the van. */
+    th { padding: 5px 9px; }
+    td { padding: 5px 9px; }
+    td.n { padding: 5px 4px 5px 9px; font-size: 0.85em; }
+    td.src { padding: 5px 2px; }
     td.time { font-size: 1em; }
-    td.addr, td.who { line-height: 1.2; }
-    h1 { font-size: 1.05em; margin-bottom: 1px; }
-    h2 { font-size: 0.82em; margin-bottom: 10px; }
-    .notes-box { padding: 6px 10px; margin-bottom: 10px; }
-    .notes-label { font-size: 0.72em; margin-bottom: 2px; }
-    .notes-print { font-size: 0.9em; line-height: 1.4; }
-    .equipment { padding: 6px 12px; margin-bottom: 8px; font-size: 0.85em; }
+    td.addr, td.who { line-height: 1.25; }
+    h1 { font-size: 1.25em; margin-bottom: 2px; }
+    h2 { font-size: 1em; margin-bottom: 12px; }
+    .notes-box { padding: 7px 12px; margin-bottom: 12px; }
+    .notes-label { font-size: 0.86em; margin-bottom: 3px; }
+    .notes-print { font-size: 1.05em; line-height: 1.45; }
+    .equipment { padding: 7px 14px; margin-bottom: 10px; font-size: 1em; }
     /* Over 9 bookings: start a new page at row 10 instead of silently
        clipping the overflow. Only the 10th row forces a break; subsequent
        rows flow naturally. */
