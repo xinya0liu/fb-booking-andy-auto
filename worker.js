@@ -100,6 +100,26 @@ export default {
       return printPage(env, url.origin, url.searchParams.get('date') || '');
     }
 
+    // 打印页的每日备注：Andy 在页面上写的 TODO（call to order oring, pickup tools）
+    if (url.pathname === '/notes' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      const date = url.searchParams.get('date') || '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return new Response('bad date', { status: 400 });
+      const key = `note:${date}`;
+      if (req.method === 'GET') {
+        const v = env.BARK_COOLDOWN ? await env.BARK_COOLDOWN.get(key) : '';
+        return new Response(v || '', { headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
+      }
+      if (req.method === 'POST') {
+        const body = (await req.text()).slice(0, 2000);
+        if (env.BARK_COOLDOWN) {
+          if (body.trim()) await env.BARK_COOLDOWN.put(key, body, { expirationTtl: 60 * 24 * 3600 });
+          else await env.BARK_COOLDOWN.delete(key);
+        }
+        return new Response('ok');
+      }
+    }
+
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
@@ -1500,27 +1520,42 @@ async function printPage(env, origin, dateParam = '') {
     const priceNum = parseInt(String(price).replace(/[^\d]/g, ''), 10);
     if (priceNum > 0) priceTotals.push(priceNum);
     const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
-    const bg = isSms ? '#f3f3f3' : '#fff';
     const srcClass = isSms ? 'badge-sms' : 'badge-fb';
     const srcLabel = isSms ? 'SMS' : 'FB';
     const addr = splitAddress(e.location || '');
     const addrHtml = addr.suburb
       ? `<span class="addr-street">${addr.street}</span><span class="addr-suburb">${addr.suburb}</span>`
       : `<span class="addr-street">${addr.street}</span>`;
-    const name = (e.name || '').trim();
+    // Customer: dedupe when the name is actually the phone number (common
+    // when the customer never shared a real name). Also treat email-only
+    // "names" as a secondary line like mobile.
+    let name = (e.name || '').trim();
+    const digits = s => (s || '').replace(/[^\d]/g, '');
+    const nameIsPhone = name && digits(name) && digits(name) === digits(mobile);
+    const nameIsEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(name);
     let whoHtml;
-    if (name && mobile) whoHtml = `<span class="who-name">${name}</span><span class="who-mobile">${mobile}</span>`;
-    else if (name) whoHtml = `<span class="who-name">${name}</span>`;
-    else if (mobile) whoHtml = `<span class="who-mobile-only">${mobile}</span>`;
-    else whoHtml = `<span class="who-empty">—</span>`;
-    return `<tr style="background:${bg}">
+    if (nameIsPhone) {
+      whoHtml = `<span class="who-mobile-only">${mobile}</span>`;
+    } else if (nameIsEmail) {
+      whoHtml = `<span class="who-mobile-only">${name}</span>${mobile ? `<span class="who-mobile">${mobile}</span>` : ''}`;
+    } else if (name && mobile) {
+      whoHtml = `<span class="who-name">${name}</span><span class="who-mobile">${mobile}</span>`;
+    } else if (name) {
+      whoHtml = `<span class="who-name">${name}</span>`;
+    } else if (mobile) {
+      whoHtml = `<span class="who-mobile-only">${mobile}</span>`;
+    } else {
+      whoHtml = `<span class="who-empty">—</span>`;
+    }
+    const dash = v => v || '<span class="empty-cell">—</span>';
+    return `<tr>
       <td class="n">${i + 1}</td>
       <td class="src"><span class="${srcClass}">${srcLabel}</span></td>
       <td class="time">${clock}</td>
-      <td class="svc">${service}</td>
-      <td class="price">${price}</td>
-      <td class="veh">${vehicle}</td>
-      <td class="addr">${addrHtml}</td>
+      <td class="svc">${dash(service)}</td>
+      <td class="price">${dash(price)}</td>
+      <td class="veh">${dash(vehicle)}</td>
+      <td class="addr">${addr.street || addr.suburb ? addrHtml : '<span class="empty-cell">—</span>'}</td>
       <td class="who">${whoHtml}</td>
     </tr>`;
   }).join('');
@@ -1547,6 +1582,12 @@ async function printPage(env, origin, dateParam = '') {
     <tbody>${rows}</tbody>
   </table>`;
 
+  // Load any daily notes Andy has written for this date (persisted in KV).
+  const noteKey = `note:${targetIso}`;
+  const noteText = env.BARK_COOLDOWN ? (await env.BARK_COOLDOWN.get(noteKey) || '') : '';
+  const htmlEsc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const noteTextEsc = htmlEsc(noteText);
+
   const secret = encodeURIComponent(env.VERIFY_TOKEN || '');
   const baseUrl = `${origin}/print?secret=${secret}`;
   const todayUrl = `${baseUrl}&date=today`;
@@ -1560,27 +1601,27 @@ async function printPage(env, origin, dateParam = '') {
   h2 { font-size: 0.95em; color: #555; margin-top: 0; font-weight: normal; margin-bottom: 16px; }
   table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
   th { background: #222; color: #fff; padding: 7px 10px; text-align: left; font-weight: normal; white-space: nowrap; }
-  th.col-n { width: 20px; }
-  th.col-src { width: 34px; }
+  th.col-n { width: 14px; padding-left: 4px; padding-right: 4px; }
+  th.col-src { width: 26px; padding-left: 2px; padding-right: 2px; }
   th.col-time { width: 64px; }
   td { padding: 9px 10px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
-  td.n { color: #aaa; width: 20px; font-size: 0.78em; padding-right: 4px; }
-  td.src { padding: 9px 4px; width: 34px; text-align: center; }
-  .badge-fb, .badge-sms { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.72em; font-weight: bold; color: #fff; letter-spacing: 0.3px; }
+  td.n { color: #aaa; width: 14px; font-size: 0.75em; padding: 9px 4px; text-align: right; }
+  td.src { padding: 9px 2px; width: 26px; text-align: center; }
+  .badge-fb, .badge-sms { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 0.65em; font-weight: bold; color: #fff; letter-spacing: 0.2px; }
   .badge-fb { background: #1877f2; }
   .badge-sms { background: #2a7a2a; }
   td.time { white-space: nowrap; font-weight: bold; font-size: 1.05em; }
   td.svc { max-width: 170px; word-break: break-word; }
   td.price { white-space: nowrap; }
   td.veh  { max-width: 130px; word-break: break-word; }
-  td.addr { max-width: 200px; word-break: break-word; line-height: 1.3; }
-  td.addr .addr-street { display: block; font-weight: bold; }
-  td.addr .addr-suburb { display: block; color: #555; font-size: 0.9em; }
+  td.addr { max-width: 220px; word-break: break-word; line-height: 1.3; }
+  td.addr .addr-street { display: block; color: #333; }
+  td.addr .addr-suburb { display: block; color: #111; font-weight: bold; }
   td.who { line-height: 1.3; }
   td.who .who-name { display: block; font-weight: bold; }
   td.who .who-mobile { display: block; color: #555; font-size: 0.9em; }
   td.who .who-mobile-only { display: block; color: #111; }
-  td.who .who-empty { color: #ccc; }
+  td.who .who-empty, .empty-cell { color: #ccc; }
   .empty { color: #888; font-style: italic; }
   .toggle { display: flex; gap: 6px; margin-bottom: 14px; align-items: center; flex-wrap: nowrap; overflow-x: hidden; }
   .toggle a { padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.85em; border: 1px solid #bbb; color: #333; background: #f5f5f5; white-space: nowrap; }
@@ -1588,6 +1629,19 @@ async function printPage(env, origin, dateParam = '') {
   .toggle input[type=date] { padding: 5px 6px; border-radius: 6px; border: 1px solid #bbb; font-size: 0.85em; color: #333; min-width: 0; width: 120px; }
   .toggle .other-label { font-size: 0.85em; color: #555; white-space: nowrap; }
   .equipment { background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 10px 16px; margin-bottom: 14px; font-weight: bold; font-size: 0.95em; }
+  .notes-box { border: 1px solid #ddd; border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; background: #fafafa; }
+  .notes-label { font-size: 0.78em; color: #777; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+  .notes-label .notes-status { font-size: 0.9em; color: #999; margin-left: auto; }
+  .notes-input { width: 100%; min-height: 50px; border: none; background: transparent; resize: vertical; font-family: inherit; font-size: 0.95em; color: #111; outline: none; line-height: 1.4; box-sizing: border-box; padding: 0; }
+  .notes-input::placeholder { color: #bbb; }
+  .notes-print { white-space: pre-wrap; font-size: 1em; line-height: 1.5; }
+  @media print {
+    .notes-box { background: transparent; border: 1px solid #999; page-break-inside: avoid; }
+    .notes-box.notes-empty { display: none; }
+    .notes-input { display: none; }
+    .notes-label .notes-status { display: none; }
+  }
+  @media screen { .notes-print { display: none; } }
   .print-btn { padding: 6px 18px; border-radius: 6px; font-size: 0.9em; border: 1px solid #2a7a2a; color: #fff; background: #2a7a2a; cursor: pointer; white-space: nowrap; margin-left: auto; }
   .print-btn:hover { background: #1e5c1e; }
   @media (max-width: 520px) {
@@ -1634,6 +1688,24 @@ function doPrint() {
 function cancelPrint() {
   document.getElementById('print-modal').classList.remove('open');
 }
+let notesTimer = null;
+function onNotesInput(e) {
+  const status = document.getElementById('notes-status');
+  const printView = document.getElementById('notes-print');
+  const box = e.target.closest('.notes-box');
+  if (printView) printView.textContent = e.target.value;
+  if (box) box.classList.toggle('notes-empty', !e.target.value.trim());
+  if (status) status.textContent = 'saving…';
+  clearTimeout(notesTimer);
+  notesTimer = setTimeout(async () => {
+    try {
+      await fetch(window.NOTES_URL, { method: 'POST', body: e.target.value });
+      if (status) { status.textContent = 'saved'; setTimeout(() => { if (status.textContent === 'saved') status.textContent = ''; }, 1500); }
+    } catch {
+      if (status) status.textContent = 'save failed';
+    }
+  }, 600);
+}
 </script>
 </head><body>
 <h1>Andy Auto AC Regas</h1>
@@ -1644,6 +1716,12 @@ function cancelPrint() {
   <button class="print-btn" onclick="confirmPrint()">🖨 Print</button>
 </div>
 <h2>Appointments for ${dateStr} &nbsp;·&nbsp; ${summaryLine}</h2>
+<script>window.NOTES_URL = '${origin}/notes?secret=${secret}&date=${targetIso}';</script>
+<div class="notes-box${noteText ? '' : ' notes-empty'}">
+  <div class="notes-label">📝 Notes <span id="notes-status" class="notes-status"></span></div>
+  <textarea class="notes-input" placeholder="Reminders for this day — e.g. call to order O-ring, pickup tools…" oninput="onNotesInput(event)">${noteTextEsc}</textarea>
+  <div id="notes-print" class="notes-print">${noteTextEsc}</div>
+</div>
 ${equipmentBanner}${empty}${tableHtml}
 <div id="print-modal">
   <div id="print-modal-box">
