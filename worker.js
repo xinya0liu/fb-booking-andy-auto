@@ -643,6 +643,7 @@ Rules:
   const cleanStr = s => String(s || '').trim().replace(/^["']+$/, '');
   const res = { name: cleanStr(o.name) };
   for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'notes']) res[k] = String(o[k] || '').trim();
+  res.address = normalizeAddress(res.address);
   const dm = String(o.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const sm = String(o.start || '').match(/^(\d{1,2}):(\d{2})$/);
   const em = String(o.end || '').match(/^(\d{1,2}):(\d{2})$/);
@@ -726,6 +727,7 @@ ${conversationText}`;
   const cleanStr = s => String(s || '').trim().replace(/^["']+$/, '');
   const res = { name: cleanStr(o.name) };
   for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'notes']) res[k] = String(o[k] || '').trim();
+  res.address = normalizeAddress(res.address);
   const dm = String(o.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const sm = String(o.start || '').match(/^(\d{1,2}):(\d{2})$/);
   const em = String(o.end || '').match(/^(\d{1,2}):(\d{2})$/);
@@ -808,7 +810,7 @@ async function doConfirmFromChat(ctx, f) {
     const prevBookings = await findAllBookings(env, cfg, psid);
     const prevWithAddr = prevBookings.find(e => e.location && e.startMs < Date.now());
     if (prevWithAddr) {
-      d.address = prevWithAddr.location;
+      d.address = normalizeAddress(prevWithAddr.location);
       usedPreviousAddress = true;
     }
   }
@@ -1371,12 +1373,40 @@ const MANUAL_SERVICE_KEYWORDS = [
   'repair',
 ];
 
+// Normalize a free-form address: strip state/country/postcode suffixes and
+// move misplaced unit/flat numbers from the tail back to the head where they
+// belong. Safe to apply multiple times (idempotent).
+const ADDR_STATE_RE = /[,\s]+(qld|queensland|nsw|new south wales|vic|victoria|wa|western australia|sa|south australia|tas|tasmania|nt|northern territory|act|australian capital territory)\b/gi;
+const ADDR_COUNTRY_RE = /[,\s]+australia\b/gi;
+const ADDR_POSTCODE_RE = /[,\s]+\b\d{4}\b(?=[,\s]*$)/;
+const UNIT_SEG_RE = /^(unit|u|apt|apartment|flat|suite)\s*\.?\s*([\w\/-]+)$/i;
+
+function normalizeAddress(addr) {
+  if (!addr) return '';
+  let s = String(addr).trim();
+  s = s.replace(ADDR_COUNTRY_RE, '');
+  s = s.replace(ADDR_STATE_RE, '');
+  s = s.replace(ADDR_POSTCODE_RE, '');
+  // Collapse dangling commas and extra whitespace left after stripping
+  s = s.replace(/\s*,\s*,+/g, ', ').replace(/^[,\s]+|[,\s]+$/g, '').replace(/\s+/g, ' ');
+  // Move misplaced trailing "Unit X" / "Apt X" to the front — legacy data
+  // like "10 Holmead Rd, Eight Mile Plains, Unit 84" becomes "Unit 84, 10
+  // Holmead Rd, Eight Mile Plains".
+  const segs = s.split(',').map(x => x.trim()).filter(Boolean);
+  if (segs.length >= 2 && UNIT_SEG_RE.test(segs[segs.length - 1])) {
+    const unit = segs.pop();
+    segs.unshift(unit);
+    s = segs.join(', ');
+  }
+  return s;
+}
+
 // Split a free-form address into { street, suburb } for two-line print display.
 // Works off the last comma, else falls back to the last street-suffix word
 // (Road/St/Ave/etc). If neither heuristic matches, returns the address whole.
 const STREET_SUFFIX_RE = /^(road|rd|street|st|avenue|ave|drive|dr|lane|ln|court|ct|place|pl|way|highway|hwy|crescent|cres|terrace|tce|close|cl|parade|pde|boulevard|blvd|boulevarde|circuit|cct|esplanade|esp)[,.]?$/i;
 function splitAddress(addr) {
-  const s = (addr || '').trim();
+  const s = normalizeAddress(addr);
   if (!s) return { street: '', suburb: '' };
   const commaIdx = s.lastIndexOf(',');
   if (commaIdx > 0) {
