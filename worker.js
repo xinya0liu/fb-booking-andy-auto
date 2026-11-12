@@ -1371,6 +1371,26 @@ const MANUAL_SERVICE_KEYWORDS = [
   'repair',
 ];
 
+// Split a free-form address into { street, suburb } for two-line print display.
+// Works off the last comma, else falls back to the last street-suffix word
+// (Road/St/Ave/etc). If neither heuristic matches, returns the address whole.
+const STREET_SUFFIX_RE = /^(road|rd|street|st|avenue|ave|drive|dr|lane|ln|court|ct|place|pl|way|highway|hwy|crescent|cres|terrace|tce|close|cl|parade|pde|boulevard|blvd|boulevarde|circuit|cct|esplanade|esp)[,.]?$/i;
+function splitAddress(addr) {
+  const s = (addr || '').trim();
+  if (!s) return { street: '', suburb: '' };
+  const commaIdx = s.lastIndexOf(',');
+  if (commaIdx > 0) {
+    return { street: s.slice(0, commaIdx).trim(), suburb: s.slice(commaIdx + 1).trim() };
+  }
+  const parts = s.split(/\s+/);
+  for (let i = parts.length - 2; i >= 0; i--) {
+    if (STREET_SUFFIX_RE.test(parts[i])) {
+      return { street: parts.slice(0, i + 1).join(' '), suburb: parts.slice(i + 1).join(' ') };
+    }
+  }
+  return { street: s, suburb: '' };
+}
+
 function parseSummaryFields(summary) {
   const hasName = /\s*–\s*.+$/.test(summary);
   // Strip customer name (system format: "Service $Price – Name")
@@ -1428,9 +1448,12 @@ async function printPage(env, origin, dateParam = '') {
   const targetIso = `${target.y}-${pad(target.m)}-${pad(target.d)}`;
 
   const services = [];
+  const priceTotals = [];
+  const times = [];
   const rows = bookings.map((e, i) => {
     const p = localParts(e.startMs, cfg.tz);
     const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
+    times.push(clock);
     const desc = e.description || '';
     const isSms = !e.psid;
     // Always parse summary so manual Calendar title edits (e.g. price change) take precedence
@@ -1444,19 +1467,31 @@ async function printPage(env, origin, dateParam = '') {
     let price = summaryParsed.price || e.price || '';
     let vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim() || summaryParsed.vehicle || e.vehicle || '';
     services.push(service);
+    const priceNum = parseInt(String(price).replace(/[^\d]/g, ''), 10);
+    if (priceNum > 0) priceTotals.push(priceNum);
     const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
-    const bg = isSms ? '#e0e0e0' : '#fff';
-    const source = isSms ? 'SMS' : 'FB';
+    const bg = isSms ? '#f3f3f3' : '#fff';
+    const srcClass = isSms ? 'badge-sms' : 'badge-fb';
+    const srcLabel = isSms ? 'SMS' : 'FB';
+    const addr = splitAddress(e.location || '');
+    const addrHtml = addr.suburb
+      ? `<span class="addr-street">${addr.street}</span><span class="addr-suburb">${addr.suburb}</span>`
+      : `<span class="addr-street">${addr.street}</span>`;
+    const name = (e.name || '').trim();
+    let whoHtml;
+    if (name && mobile) whoHtml = `<span class="who-name">${name}</span><span class="who-mobile">${mobile}</span>`;
+    else if (name) whoHtml = `<span class="who-name">${name}</span>`;
+    else if (mobile) whoHtml = `<span class="who-mobile-only">${mobile}</span>`;
+    else whoHtml = `<span class="who-empty">—</span>`;
     return `<tr style="background:${bg}">
       <td class="n">${i + 1}</td>
-      <td class="src">${source}</td>
+      <td class="src"><span class="${srcClass}">${srcLabel}</span></td>
       <td class="time">${clock}</td>
-      <td>${service}</td>
-      <td>${price}</td>
+      <td class="svc">${service}</td>
+      <td class="price">${price}</td>
       <td class="veh">${vehicle}</td>
-      <td class="addr">${e.location || ''}</td>
-      <td>${e.name || ''}</td>
-      <td>${mobile}</td>
+      <td class="addr">${addrHtml}</td>
+      <td class="who">${whoHtml}</td>
     </tr>`;
   }).join('');
 
@@ -1467,11 +1502,17 @@ async function printPage(env, origin, dateParam = '') {
   const empty = bookings.length === 0
     ? `<p class="empty">No bookings for ${isToday ? 'today' : isTomorrow ? 'tomorrow' : dateStr}.</p>` : '';
 
+  const totalPrice = priceTotals.reduce((a, b) => a + b, 0);
+  const summaryBits = [`${bookings.length} booking${bookings.length !== 1 ? 's' : ''}`];
+  if (totalPrice > 0) summaryBits.push(`$${totalPrice.toLocaleString()} total`);
+  if (times.length) summaryBits.push(`${times[0]} – ${times[times.length - 1]}`);
+  const summaryLine = summaryBits.join(' · ');
+
   const tableHtml = bookings.length === 0 ? '' : `
   <table>
     <thead><tr>
-      <th>#</th><th>Source</th><th>Time</th><th>Service</th><th>Price</th>
-      <th>Vehicle</th><th>Address</th><th>Customer</th><th>Mobile</th>
+      <th class="col-n">#</th><th class="col-src">Src</th><th class="col-time">Time</th>
+      <th>Service</th><th>Price</th><th>Vehicle</th><th>Address</th><th>Customer</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
@@ -1487,15 +1528,30 @@ async function printPage(env, origin, dateParam = '') {
   body { font-family: Arial, sans-serif; margin: 24px 32px; color: #111; }
   h1 { font-size: 1.15em; margin-bottom: 2px; }
   h2 { font-size: 0.95em; color: #555; margin-top: 0; font-weight: normal; margin-bottom: 16px; }
-  table { border-collapse: collapse; width: 100%; font-size: 0.88em; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
   th { background: #222; color: #fff; padding: 7px 10px; text-align: left; font-weight: normal; white-space: nowrap; }
-  td { padding: 8px 10px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
-  td.n { color: #aaa; width: 24px; font-size: 0.85em; }
-  td.time { white-space: nowrap; font-weight: bold; }
-  td.addr { max-width: 180px; word-break: break-word; }
-  td.veh  { max-width: 140px; word-break: break-word; }
+  th.col-n { width: 20px; }
+  th.col-src { width: 34px; }
+  th.col-time { width: 64px; }
+  td { padding: 9px 10px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
+  td.n { color: #aaa; width: 20px; font-size: 0.78em; padding-right: 4px; }
+  td.src { padding: 9px 4px; width: 34px; text-align: center; }
+  .badge-fb, .badge-sms { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 0.72em; font-weight: bold; color: #fff; letter-spacing: 0.3px; }
+  .badge-fb { background: #1877f2; }
+  .badge-sms { background: #2a7a2a; }
+  td.time { white-space: nowrap; font-weight: bold; font-size: 1.05em; }
+  td.svc { max-width: 170px; word-break: break-word; }
+  td.price { white-space: nowrap; }
+  td.veh  { max-width: 130px; word-break: break-word; }
+  td.addr { max-width: 200px; word-break: break-word; line-height: 1.3; }
+  td.addr .addr-street { display: block; font-weight: bold; }
+  td.addr .addr-suburb { display: block; color: #555; font-size: 0.9em; }
+  td.who { line-height: 1.3; }
+  td.who .who-name { display: block; font-weight: bold; }
+  td.who .who-mobile { display: block; color: #555; font-size: 0.9em; }
+  td.who .who-mobile-only { display: block; color: #111; }
+  td.who .who-empty { color: #ccc; }
   .empty { color: #888; font-style: italic; }
-  .src { color: #111; font-size: 0.8em; text-align: center; white-space: nowrap; width: 40px; }
   .toggle { display: flex; gap: 6px; margin-bottom: 14px; align-items: center; flex-wrap: nowrap; overflow-x: hidden; }
   .toggle a { padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.85em; border: 1px solid #bbb; color: #333; background: #f5f5f5; white-space: nowrap; }
   .toggle a.active { background: #222; color: #fff; border-color: #222; }
@@ -1557,7 +1613,7 @@ function cancelPrint() {
   <label class="other-label" style="display:flex;align-items:center;gap:4px;">Other: <input type="date" value="${targetIso}" onchange="location.href='${baseUrl}&date='+this.value"></label>
   <button class="print-btn" onclick="confirmPrint()">🖨 Print</button>
 </div>
-<h2>Appointments for ${dateStr} &nbsp;·&nbsp; ${bookings.length} booking${bookings.length !== 1 ? 's' : ''}</h2>
+<h2>Appointments for ${dateStr} &nbsp;·&nbsp; ${summaryLine}</h2>
 ${equipmentBanner}${empty}${tableHtml}
 <div id="print-modal">
   <div id="print-modal-box">
