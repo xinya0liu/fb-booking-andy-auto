@@ -15,8 +15,6 @@ CREATE TABLE IF NOT EXISTS vehicles (
   -- "R134a" or "R1234yf" — critical for pricing (R1234yf is 5-10x more expensive).
   refrigerant TEXT    NOT NULL,
   charge_g    INTEGER NOT NULL,
-  oil_type    TEXT    NOT NULL DEFAULT '',   -- PAG46 / PAG100 / PAG150 / ND-Oil8 …
-  oil_ml      INTEGER NOT NULL DEFAULT 0,
   notes       TEXT    NOT NULL DEFAULT '',
   updated_at  INTEGER NOT NULL
 );

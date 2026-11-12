@@ -1773,9 +1773,6 @@ ${equipmentBanner}${empty}${tableHtml}
 // 车型冷媒数据库 (Cloudflare D1)
 // =========================================================================
 
-const VEHICLE_COLS = ['make', 'model', 'year_start', 'year_end', 'variant',
-  'refrigerant', 'charge_g', 'oil_type', 'oil_ml', 'notes'];
-
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -1793,10 +1790,6 @@ function validateVehicle(v) {
   if (!v.refrigerant || !/^R1234yf$|^R134a$|^R12$/i.test(String(v.refrigerant).trim())) errors.push('refrigerant must be R134a, R1234yf, or R12');
   const cg = Number(v.charge_g);
   if (!Number.isFinite(cg) || cg <= 0 || cg > 5000) errors.push('charge_g 1-5000');
-  if (v.oil_ml !== undefined && v.oil_ml !== '') {
-    const om = Number(v.oil_ml);
-    if (!Number.isFinite(om) || om < 0 || om > 1000) errors.push('oil_ml 0-1000');
-  }
   return errors;
 }
 
@@ -1809,8 +1802,6 @@ function normalizeVehicle(v) {
     variant: String(v.variant || '').trim(),
     refrigerant: String(v.refrigerant || '').trim().replace(/^r/i, 'R'),
     charge_g: Number(v.charge_g),
-    oil_type: String(v.oil_type || '').trim(),
-    oil_ml: Number(v.oil_ml || 0),
     notes: String(v.notes || '').trim(),
   };
 }
@@ -1891,11 +1882,7 @@ function vehiclesAdminPage(env, origin) {
         <div><label>Charge (g) *</label><input id="f-charge" type="number" min="1" max="5000" required></div>
       </div>
       <div class="row">
-        <div><label>Oil type</label><input id="f-oil" placeholder="PAG46 / PAG100 …"></div>
-        <div><label>Oil (ml)</label><input id="f-oilml" type="number" min="0" max="1000"></div>
-      </div>
-      <div class="row">
-        <div><label>Notes</label><textarea id="f-notes" placeholder="e.g. Hybrid variant uses different oil"></textarea></div>
+        <div><label>Notes</label><textarea id="f-notes" placeholder="e.g. Variant-specific caveats"></textarea></div>
       </div>
       <div class="modal-btns">
         <button type="button" class="btn alt" onclick="closeModal()">Cancel</button>
@@ -1934,14 +1921,13 @@ function render() {
   const rows = currentRows.map(v => {
     const years = v.year_start === v.year_end ? v.year_start : v.year_start + '-' + v.year_end;
     const refClass = v.refrigerant === 'R1234yf' ? 'r1234yf' : '';
-    const variant = v.variant ? ' · <em>' + esc(v.variant) + '</em>' : '';
-    const oil = v.oil_type || v.oil_ml ? esc(v.oil_type) + (v.oil_ml ? ' ' + v.oil_ml + 'ml' : '') : '';
     return \`<tr>
-      <td><strong>\${esc(v.make)}</strong> \${esc(v.model)}\${variant}</td>
+      <td><strong>\${esc(v.make)}</strong></td>
+      <td>\${esc(v.model)}</td>
+      <td>\${esc(v.variant)}</td>
       <td>\${years}</td>
       <td class="\${refClass}">\${esc(v.refrigerant)}</td>
       <td>\${v.charge_g}g</td>
-      <td>\${oil}</td>
       <td>\${esc(v.notes)}</td>
       <td class="actions">
         <button onclick="openEdit(\${v.id})">Edit</button>
@@ -1950,7 +1936,7 @@ function render() {
     </tr>\`;
   }).join('');
   tbl.innerHTML = \`<table><thead><tr>
-    <th>Make / Model</th><th>Years</th><th>Refrigerant</th><th>Charge</th><th>Oil</th><th>Notes</th><th></th>
+    <th>Make</th><th>Model</th><th>Variant</th><th>Years</th><th>Refrigerant</th><th>Charge</th><th>Notes</th><th></th>
   </tr></thead><tbody>\${rows}</tbody></table>\`;
 }
 function openAdd() {
@@ -1973,8 +1959,6 @@ function openEdit(id) {
   document.getElementById('f-variant').value = v.variant || '';
   document.getElementById('f-refrig').value = v.refrigerant;
   document.getElementById('f-charge').value = v.charge_g;
-  document.getElementById('f-oil').value = v.oil_type || '';
-  document.getElementById('f-oilml').value = v.oil_ml || '';
   document.getElementById('f-notes').value = v.notes || '';
   document.getElementById('modal').classList.add('open');
 }
@@ -1990,8 +1974,6 @@ async function submitForm(e) {
     variant: document.getElementById('f-variant').value,
     refrigerant: document.getElementById('f-refrig').value,
     charge_g: document.getElementById('f-charge').value,
-    oil_type: document.getElementById('f-oil').value,
-    oil_ml: document.getElementById('f-oilml').value || 0,
     notes: document.getElementById('f-notes').value,
   };
   const btn = document.getElementById('save-btn');
@@ -2060,9 +2042,9 @@ async function vehiclesApi(req, env) {
     const v = normalizeVehicle(body);
     const now = Math.floor(Date.now() / 1000);
     const { meta } = await env.DB.prepare(
-      `INSERT INTO vehicles (make, model, year_start, year_end, variant, refrigerant, charge_g, oil_type, oil_ml, notes, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(v.make, v.model, v.year_start, v.year_end, v.variant, v.refrigerant, v.charge_g, v.oil_type, v.oil_ml, v.notes, now).run();
+      `INSERT INTO vehicles (make, model, year_start, year_end, variant, refrigerant, charge_g, notes, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(v.make, v.model, v.year_start, v.year_end, v.variant, v.refrigerant, v.charge_g, v.notes, now).run();
     return jsonResponse({ id: meta.last_row_id, ok: true });
   }
 
@@ -2074,9 +2056,9 @@ async function vehiclesApi(req, env) {
     const v = normalizeVehicle(body);
     const now = Math.floor(Date.now() / 1000);
     await env.DB.prepare(
-      `UPDATE vehicles SET make=?, model=?, year_start=?, year_end=?, variant=?, refrigerant=?, charge_g=?, oil_type=?, oil_ml=?, notes=?, updated_at=?
+      `UPDATE vehicles SET make=?, model=?, year_start=?, year_end=?, variant=?, refrigerant=?, charge_g=?, notes=?, updated_at=?
        WHERE id=?`
-    ).bind(v.make, v.model, v.year_start, v.year_end, v.variant, v.refrigerant, v.charge_g, v.oil_type, v.oil_ml, v.notes, now, Number(id)).run();
+    ).bind(v.make, v.model, v.year_start, v.year_end, v.variant, v.refrigerant, v.charge_g, v.notes, now, Number(id)).run();
     return jsonResponse({ ok: true });
   }
 
