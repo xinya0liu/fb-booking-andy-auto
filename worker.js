@@ -120,6 +120,20 @@ export default {
       }
     }
 
+    // 车型冷媒数据库：Web 管理页 + CRUD API + 查询 API
+    if (url.pathname === '/vehicles' && req.method === 'GET' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return vehiclesAdminPage(env, url.origin);
+    }
+    if (url.pathname === '/vehicles/api' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return vehiclesApi(req, env);
+    }
+    if (url.pathname === '/vehicle-lookup' && req.method === 'GET' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return vehicleLookup(url.searchParams, env);
+    }
+
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
@@ -1753,6 +1767,349 @@ ${equipmentBanner}${empty}${tableHtml}
 </body></html>`;
 
   return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8' } });
+}
+
+// =========================================================================
+// 车型冷媒数据库 (Cloudflare D1)
+// =========================================================================
+
+const VEHICLE_COLS = ['make', 'model', 'year_start', 'year_end', 'variant',
+  'refrigerant', 'charge_g', 'oil_type', 'oil_ml', 'notes'];
+
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json;charset=utf-8' },
+  });
+}
+
+function validateVehicle(v) {
+  const errors = [];
+  if (!v.make || !String(v.make).trim()) errors.push('make required');
+  if (!v.model || !String(v.model).trim()) errors.push('model required');
+  const ys = Number(v.year_start), ye = Number(v.year_end);
+  if (!Number.isInteger(ys) || ys < 1950 || ys > 2100) errors.push('year_start 1950-2100');
+  if (!Number.isInteger(ye) || ye < ys || ye > 2100) errors.push('year_end must be >= year_start and <= 2100');
+  if (!v.refrigerant || !/^R1234yf$|^R134a$|^R12$/i.test(String(v.refrigerant).trim())) errors.push('refrigerant must be R134a, R1234yf, or R12');
+  const cg = Number(v.charge_g);
+  if (!Number.isFinite(cg) || cg <= 0 || cg > 5000) errors.push('charge_g 1-5000');
+  if (v.oil_ml !== undefined && v.oil_ml !== '') {
+    const om = Number(v.oil_ml);
+    if (!Number.isFinite(om) || om < 0 || om > 1000) errors.push('oil_ml 0-1000');
+  }
+  return errors;
+}
+
+function normalizeVehicle(v) {
+  return {
+    make: String(v.make || '').trim(),
+    model: String(v.model || '').trim(),
+    year_start: Number(v.year_start),
+    year_end: Number(v.year_end),
+    variant: String(v.variant || '').trim(),
+    refrigerant: String(v.refrigerant || '').trim().replace(/^r/i, 'R'),
+    charge_g: Number(v.charge_g),
+    oil_type: String(v.oil_type || '').trim(),
+    oil_ml: Number(v.oil_ml || 0),
+    notes: String(v.notes || '').trim(),
+  };
+}
+
+function vehiclesAdminPage(env, origin) {
+  const secret = encodeURIComponent(env.VERIFY_TOKEN || '');
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Andy Auto – Vehicle DB</title>
+<style>
+  body { font-family: -apple-system, Arial, sans-serif; margin: 20px; color: #111; max-width: 1100px; }
+  h1 { font-size: 1.2em; margin: 0 0 4px; }
+  .sub { color: #666; font-size: 0.85em; margin-bottom: 16px; }
+  .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .bar input[type=search] { flex: 1; min-width: 180px; padding: 7px 10px; font-size: 0.95em; border: 1px solid #ccc; border-radius: 6px; }
+  .btn { padding: 7px 14px; border-radius: 6px; font-size: 0.9em; border: 1px solid #2a7a2a; color: #fff; background: #2a7a2a; cursor: pointer; }
+  .btn:hover { background: #1e5c1e; }
+  .btn.alt { background: #fff; color: #333; border-color: #ccc; }
+  .btn.alt:hover { background: #f0f0f0; }
+  .btn.danger { background: #c22; border-color: #c22; }
+  .btn.danger:hover { background: #a00; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.88em; }
+  th { background: #222; color: #fff; padding: 7px 10px; text-align: left; font-weight: normal; white-space: nowrap; }
+  td { padding: 7px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+  tr:hover { background: #fafafa; }
+  td.actions { white-space: nowrap; text-align: right; }
+  td.actions button { font-size: 0.78em; padding: 3px 8px; margin-left: 4px; border-radius: 4px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+  td.actions button.del { color: #c22; border-color: #e5a; }
+  .r1234yf { color: #c40; font-weight: bold; }
+  .empty { color: #888; font-style: italic; padding: 24px; text-align: center; }
+  .msg { padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 0.9em; }
+  .msg.err { background: #fee; color: #a00; border: 1px solid #f99; }
+  .msg.ok { background: #efe; color: #060; border: 1px solid #9c9; }
+  #modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 50; align-items: center; justify-content: center; }
+  #modal.open { display: flex; }
+  #modal-box { background: #fff; border-radius: 10px; padding: 20px 22px; width: 90%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+  #modal-box h2 { margin: 0 0 12px; font-size: 1.05em; }
+  .row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .row > div { flex: 1; }
+  .row label { display: block; font-size: 0.78em; color: #666; margin-bottom: 2px; }
+  .row input, .row select, .row textarea { width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9em; box-sizing: border-box; font-family: inherit; }
+  .row textarea { resize: vertical; min-height: 44px; }
+  .modal-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+</style></head><body>
+<h1>Andy Auto – Vehicle Refrigerant DB</h1>
+<div class="sub">Lookup data for AC regas quoting. R1234yf prices ~5-10x more than R134a — always double-check that field.</div>
+<div id="msg"></div>
+<div class="bar">
+  <input type="search" id="q" placeholder="Search make / model / variant…" oninput="debouncedLoad()">
+  <button class="btn" onclick="openAdd()">+ Add vehicle</button>
+</div>
+<div id="tbl"></div>
+
+<div id="modal" onclick="if(event.target===this)closeModal()">
+  <div id="modal-box">
+    <h2 id="modal-title">Add vehicle</h2>
+    <form id="form" onsubmit="submitForm(event)">
+      <input type="hidden" id="f-id">
+      <div class="row">
+        <div><label>Make *</label><input id="f-make" required></div>
+        <div><label>Model *</label><input id="f-model" required></div>
+      </div>
+      <div class="row">
+        <div><label>Year start *</label><input id="f-ys" type="number" min="1950" max="2100" required></div>
+        <div><label>Year end *</label><input id="f-ye" type="number" min="1950" max="2100" required></div>
+      </div>
+      <div class="row">
+        <div><label>Variant (optional)</label><input id="f-variant" placeholder="e.g. Hybrid / Petrol / GUN126R"></div>
+      </div>
+      <div class="row">
+        <div><label>Refrigerant *</label>
+          <select id="f-refrig" required>
+            <option value="R134a">R134a</option>
+            <option value="R1234yf">R1234yf</option>
+            <option value="R12">R12 (legacy)</option>
+          </select>
+        </div>
+        <div><label>Charge (g) *</label><input id="f-charge" type="number" min="1" max="5000" required></div>
+      </div>
+      <div class="row">
+        <div><label>Oil type</label><input id="f-oil" placeholder="PAG46 / PAG100 …"></div>
+        <div><label>Oil (ml)</label><input id="f-oilml" type="number" min="0" max="1000"></div>
+      </div>
+      <div class="row">
+        <div><label>Notes</label><textarea id="f-notes" placeholder="e.g. Hybrid variant uses different oil"></textarea></div>
+      </div>
+      <div class="modal-btns">
+        <button type="button" class="btn alt" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn" id="save-btn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const SECRET = '${secret}';
+const API = '${origin}/vehicles/api?secret=' + SECRET;
+let currentRows = [];
+let debounceTimer;
+function debouncedLoad() { clearTimeout(debounceTimer); debounceTimer = setTimeout(load, 220); }
+function esc(s) { return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function flash(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+  setTimeout(() => { m.textContent = ''; m.className = ''; }, 3500);
+}
+async function load() {
+  const q = document.getElementById('q').value.trim();
+  const r = await fetch(API + (q ? '&q=' + encodeURIComponent(q) : ''));
+  const data = await r.json();
+  currentRows = data.vehicles || [];
+  render();
+}
+function render() {
+  const tbl = document.getElementById('tbl');
+  if (!currentRows.length) {
+    tbl.innerHTML = '<div class="empty">No vehicles yet. Click + Add vehicle to start.</div>';
+    return;
+  }
+  const rows = currentRows.map(v => {
+    const years = v.year_start === v.year_end ? v.year_start : v.year_start + '-' + v.year_end;
+    const refClass = v.refrigerant === 'R1234yf' ? 'r1234yf' : '';
+    const variant = v.variant ? ' · <em>' + esc(v.variant) + '</em>' : '';
+    const oil = v.oil_type || v.oil_ml ? esc(v.oil_type) + (v.oil_ml ? ' ' + v.oil_ml + 'ml' : '') : '';
+    return \`<tr>
+      <td><strong>\${esc(v.make)}</strong> \${esc(v.model)}\${variant}</td>
+      <td>\${years}</td>
+      <td class="\${refClass}">\${esc(v.refrigerant)}</td>
+      <td>\${v.charge_g}g</td>
+      <td>\${oil}</td>
+      <td>\${esc(v.notes)}</td>
+      <td class="actions">
+        <button onclick="openEdit(\${v.id})">Edit</button>
+        <button class="del" onclick="del(\${v.id})">Delete</button>
+      </td>
+    </tr>\`;
+  }).join('');
+  tbl.innerHTML = \`<table><thead><tr>
+    <th>Make / Model</th><th>Years</th><th>Refrigerant</th><th>Charge</th><th>Oil</th><th>Notes</th><th></th>
+  </tr></thead><tbody>\${rows}</tbody></table>\`;
+}
+function openAdd() {
+  document.getElementById('modal-title').textContent = 'Add vehicle';
+  document.getElementById('form').reset();
+  document.getElementById('f-id').value = '';
+  document.getElementById('f-refrig').value = 'R134a';
+  document.getElementById('modal').classList.add('open');
+  setTimeout(() => document.getElementById('f-make').focus(), 50);
+}
+function openEdit(id) {
+  const v = currentRows.find(x => x.id === id);
+  if (!v) return;
+  document.getElementById('modal-title').textContent = 'Edit vehicle #' + id;
+  document.getElementById('f-id').value = v.id;
+  document.getElementById('f-make').value = v.make;
+  document.getElementById('f-model').value = v.model;
+  document.getElementById('f-ys').value = v.year_start;
+  document.getElementById('f-ye').value = v.year_end;
+  document.getElementById('f-variant').value = v.variant || '';
+  document.getElementById('f-refrig').value = v.refrigerant;
+  document.getElementById('f-charge').value = v.charge_g;
+  document.getElementById('f-oil').value = v.oil_type || '';
+  document.getElementById('f-oilml').value = v.oil_ml || '';
+  document.getElementById('f-notes').value = v.notes || '';
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+async function submitForm(e) {
+  e.preventDefault();
+  const id = document.getElementById('f-id').value;
+  const body = {
+    make: document.getElementById('f-make').value,
+    model: document.getElementById('f-model').value,
+    year_start: document.getElementById('f-ys').value,
+    year_end: document.getElementById('f-ye').value,
+    variant: document.getElementById('f-variant').value,
+    refrigerant: document.getElementById('f-refrig').value,
+    charge_g: document.getElementById('f-charge').value,
+    oil_type: document.getElementById('f-oil').value,
+    oil_ml: document.getElementById('f-oilml').value || 0,
+    notes: document.getElementById('f-notes').value,
+  };
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const r = await fetch(API + (id ? '&id=' + id : ''), {
+      method: id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'save failed');
+    flash(id ? 'Updated' : 'Added', true);
+    closeModal();
+    await load();
+  } catch (err) {
+    flash(err.message, false);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+async function del(id) {
+  const v = currentRows.find(x => x.id === id);
+  if (!v) return;
+  if (!confirm('Delete ' + v.make + ' ' + v.model + ' (' + v.year_start + '-' + v.year_end + ')?')) return;
+  try {
+    const r = await fetch(API + '&id=' + id, { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).error || 'delete failed');
+    flash('Deleted', true);
+    await load();
+  } catch (err) { flash(err.message, false); }
+}
+load();
+</script>
+</body></html>`;
+  return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8' } });
+}
+
+async function vehiclesApi(req, env) {
+  if (!env.DB) return jsonResponse({ error: 'D1 binding missing' }, 500);
+  const url = new URL(req.url);
+  const id = url.searchParams.get('id');
+
+  if (req.method === 'GET') {
+    const q = (url.searchParams.get('q') || '').trim();
+    let rows;
+    if (q) {
+      const like = `%${q.replace(/[%_]/g, '\\$&')}%`;
+      const { results } = await env.DB.prepare(
+        `SELECT * FROM vehicles WHERE make LIKE ? COLLATE NOCASE OR model LIKE ? COLLATE NOCASE OR variant LIKE ? COLLATE NOCASE ORDER BY make, model, year_start`
+      ).bind(like, like, like).all();
+      rows = results;
+    } else {
+      const { results } = await env.DB.prepare(
+        `SELECT * FROM vehicles ORDER BY make COLLATE NOCASE, model COLLATE NOCASE, year_start`
+      ).all();
+      rows = results;
+    }
+    return jsonResponse({ vehicles: rows });
+  }
+
+  if (req.method === 'POST') {
+    const body = await req.json();
+    const errors = validateVehicle(body);
+    if (errors.length) return jsonResponse({ error: errors.join('; ') }, 400);
+    const v = normalizeVehicle(body);
+    const now = Math.floor(Date.now() / 1000);
+    const { meta } = await env.DB.prepare(
+      `INSERT INTO vehicles (make, model, year_start, year_end, variant, refrigerant, charge_g, oil_type, oil_ml, notes, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(v.make, v.model, v.year_start, v.year_end, v.variant, v.refrigerant, v.charge_g, v.oil_type, v.oil_ml, v.notes, now).run();
+    return jsonResponse({ id: meta.last_row_id, ok: true });
+  }
+
+  if (req.method === 'PUT') {
+    if (!id) return jsonResponse({ error: 'id required' }, 400);
+    const body = await req.json();
+    const errors = validateVehicle(body);
+    if (errors.length) return jsonResponse({ error: errors.join('; ') }, 400);
+    const v = normalizeVehicle(body);
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB.prepare(
+      `UPDATE vehicles SET make=?, model=?, year_start=?, year_end=?, variant=?, refrigerant=?, charge_g=?, oil_type=?, oil_ml=?, notes=?, updated_at=?
+       WHERE id=?`
+    ).bind(v.make, v.model, v.year_start, v.year_end, v.variant, v.refrigerant, v.charge_g, v.oil_type, v.oil_ml, v.notes, now, Number(id)).run();
+    return jsonResponse({ ok: true });
+  }
+
+  if (req.method === 'DELETE') {
+    if (!id) return jsonResponse({ error: 'id required' }, 400);
+    await env.DB.prepare(`DELETE FROM vehicles WHERE id = ?`).bind(Number(id)).run();
+    return jsonResponse({ ok: true });
+  }
+
+  return jsonResponse({ error: 'method not allowed' }, 405);
+}
+
+async function vehicleLookup(params, env) {
+  if (!env.DB) return jsonResponse({ error: 'D1 binding missing' }, 500);
+  const make = (params.get('make') || '').trim();
+  const model = (params.get('model') || '').trim();
+  const year = Number(params.get('year'));
+  const variant = (params.get('variant') || '').trim();
+  if (!make || !model || !Number.isInteger(year)) {
+    return jsonResponse({ error: 'make, model, year required' }, 400);
+  }
+  // Prefer variant match, fall back to the generic (empty-variant) entry.
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM vehicles
+       WHERE make = ? COLLATE NOCASE
+         AND model = ? COLLATE NOCASE
+         AND ? BETWEEN year_start AND year_end
+       ORDER BY CASE WHEN variant = ? COLLATE NOCASE THEN 0
+                     WHEN variant = ''                 THEN 1
+                     ELSE 2 END,
+                year_start DESC`
+  ).bind(make, model, year, variant).all();
+  return jsonResponse({ match: results[0] || null, candidates: results });
 }
 
 async function findTomorrowBookings(env, cfg, { skipToday = false, offset = 1, target = null } = {}) {

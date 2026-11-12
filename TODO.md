@@ -64,7 +64,11 @@ Andy 打开审批页面
 ### 待实现
 
 - [ ] Suburb 距离数据库（Eagleby 40km 内）+ 定价区间（待讨论）
-- [ ] 车型冷媒重量数据库
+- [x] **车型冷媒重量数据库**（Cloudflare D1 + Web 管理页 `/vehicles`）
+  - Schema: make, model, year_start/end, variant, refrigerant (R134a/R1234yf), charge_g, oil_type, oil_ml, notes
+  - CRUD API: `/vehicles/api?secret=…` (GET list/search, POST create, PUT/DELETE by id)
+  - 查询 API: `/vehicle-lookup?make=…&model=…&year=…&variant=…`（精确 variant 优先，fallback 到 generic 条目）
+  - 管理页: 搜索框 + 列表 + Add/Edit modal + Delete 确认；R1234yf 高亮标红
 - [ ] D1 对话状态表（PSID、车型、地址、状态、时间戳）
 - [ ] Facebook 多轮对话逻辑（状态机）
 - [ ] 审批页面（`/quote-review?id=xxx&secret=xxx`）

@@ -9,6 +9,13 @@
       "id": "926497b155284502b3ae42a5407cda1f"
     }
   ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "andy-auto-db",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+    }
+  ],
   "triggers": {
     "crons": ["0 0 * * *", "0 9 * * *"]
   }
