@@ -86,7 +86,7 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
 
 | 区块 | 作用 |
 |---|---|
-| `export default { fetch, scheduled }` | 入口：`/c` 客人卡片、`/check` 检查页、`/print` 打印页、`/test-bark` 手动触发明日提醒、`/go` 旧链接中转、Meta webhook 验证与接收；`scheduled` 处理两个定时任务 |
+| `export default { fetch, scheduled }` | 入口：Meta webhook 验证/接收，以及所有网页端点（见下面"网页端点"表）；`scheduled` 处理两个定时任务 |
 | `handleScheduled` | 定时任务：`0 0 * * *`（早 10 点 Brisbane）发客人提醒；`0 9 * * *`（晚 7 点 Brisbane）推送明日预约 Bark |
 | `findTomorrowBookings` | 从 iCloud 日历读取明天所有预约；`skipToday: true` 时排除当天（用于客人提醒） |
 | `parseSummaryFields` | 从 SMS 预约的日历标题（如 `AC Regas 2018 Toyota $150`）解析出服务、车型、价格 |
@@ -103,6 +103,28 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
 | iCloud 日历（CalDAV）区块 | 登录、找日历、查询、写入、修改、删除事件 |
 | iCalendar 区块 | 产生和修改 .ics 事件内容 |
 | Meta / 链接 / Bark 区块 | 查客人名字（查不到就从对话参与者找）、客人卡片 `customerCard`、推送通知 `bark` |
+| `printPage` + 相关 | 打印页 HTML、`splitAddress`/`normalizeAddress` 地址处理、`parseSummaryFields` 从日历标题反解析 |
+| `vehiclesAdminPage` / `vehiclesApi` / `vehicleLookup` | 车型冷媒数据库：Admin HTML、CRUD API、精确查询 API |
+| `refrigerantPricesHandler` + `loadRefrigerantPrices` | 冷媒单价 KV 读写（`refrigerant_prices` JSON blob） |
+| `trimToLastConfirmation` / `redactOldConfirmationTimes` / `appendTriggerMarker` | SMS CONFIRMED/UPDATED 前处理：清理历史 ✅ 的旧时间，但保留地址/车型；明示触发点 |
+
+### 网页端点
+
+| 路径 | 方法 | 用途 |
+|---|---|---|
+| `/check?token=…` | GET | iCloud/日历健康检查 |
+| `/print?secret=…[&date=…]` | GET | 打印页（当天/明天/指定日期） |
+| `/notes?secret=…&date=YYYY-MM-DD` | GET/POST | 每日 📝 Notes 的 KV 读写 |
+| `/vehicles?secret=…` | GET | 车型冷媒数据库 Admin HTML |
+| `/vehicles/api?secret=…[&q=…&year=…&id=…]` | GET/POST/PUT/DELETE | 车型 CRUD + 搜索 API |
+| `/vehicle-lookup?secret=…&make=…&model=…&year=…&variant=…` | GET | 精确查询（为自动报价系统预留） |
+| `/refrigerant-prices?secret=…` | GET/POST | 冷媒单价 KV 读写（`$/kg`） |
+| `/c?psid=…` | GET | 客人卡片 |
+| `/go?…` | GET | 旧链接中转 |
+| `/test-bark?token=…` | GET | 手动触发明日提醒 |
+| `/sms-booking?secret=…` | POST | SMS 预约（文本/图片） |
+| `/imessage-task` / `/imessage-poll` / `/imessage-result` / `/imessage-keyword` | POST | Mac server.py ↔ Worker 的协作端点 |
+| Meta webhook（`/` 等） | GET/POST | Meta 验证 + 消息推送 |
 
 ### 几个设计上的重点（改代码时不要破坏）
 
@@ -152,6 +174,41 @@ Cloudflare Workers 免费方案、GitHub、Bark、iCloud 日历、Meta API 都�
 唯一的费用是 **Anthropic API**：每次发 `Booking confirmed` / `Booking updated` 会读一次对话，每单大约不到一分钱澳币，一个月几百单也只是几块钱。到 console.anthropic.com 可以看用量、设消费上限。额度用完时，Bark 会提示 `AI couldn't read the chat`，这时可以暂时用 `Booked you in` / `Booking change`。
 
 不要在 Cloudflare 或 Google Cloud 开通付费方案或绑卡计费。
+
+## 车型冷媒数据库维护（D1）
+
+数据库名：`andy-auto-db`（Oceania 区）。所有命令在本地仓库目录运行。
+
+```bash
+# 看表结构
+npx wrangler d1 execute andy-auto-db --remote --command "SELECT sql FROM sqlite_master WHERE type='table';"
+
+# 看总数 + 按品牌分组
+npx wrangler d1 execute andy-auto-db --remote --command "SELECT COUNT(*) FROM vehicles;"
+npx wrangler d1 execute andy-auto-db --remote --command "SELECT make, COUNT(*) FROM vehicles GROUP BY make ORDER BY 2 DESC LIMIT 10;"
+
+# 查某辆车
+npx wrangler d1 execute andy-auto-db --remote --command "SELECT * FROM vehicles WHERE make='Toyota' AND model LIKE 'Hilux%' ORDER BY year_start;"
+
+# 加字段（例：以后要加 oil_type）
+npx wrangler d1 execute andy-auto-db --remote --command "ALTER TABLE vehicles ADD COLUMN oil_type TEXT DEFAULT '';"
+
+# 删字段
+npx wrangler d1 execute andy-auto-db --remote --command "ALTER TABLE vehicles DROP COLUMN oil_type;"
+
+# 从 schema.sql 重建（会清空表）
+npx wrangler d1 execute andy-auto-db --remote --file=schema.sql
+
+# 备份（导出为 JSON，建议每月做一次）
+npx wrangler d1 execute andy-auto-db --remote --json --command "SELECT * FROM vehicles;" > vehicles-backup-$(date +%Y%m%d).json
+```
+
+**日常维护几乎不用做**：Andy 从 `/vehicles` 页面手动增删改即可。
+
+**冷媒单价**：在 `/vehicles` 页面顶部黄色栏直接改，自动存到 KV（key `refrigerant_prices`）。想查当前价格：
+```bash
+curl "https://fb-booking-andy-auto.susanna0liu.workers.dev/refrigerant-prices?secret=<VERIFY_TOKEN>"
+```
 
 ## iMessage 服务维护（Andy Mac）
 

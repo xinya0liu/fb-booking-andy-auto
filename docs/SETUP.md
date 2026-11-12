@@ -48,6 +48,38 @@ Worker 名称是 `fb-booking-andy-auto`，连接这个 GitHub 仓库自动部署
 
 `wrangler.jsonc` 里的 `"keep_vars": true` 很重要：它让每次部署时保留后台填的变量。删掉的话，部署后普通变量会被清空。
 
+### KV 命名空间（必要）
+
+Worker 需要一个 KV 命名空间 `BARK_COOLDOWN`，存：
+- Bark 推送的 cooldown 标记
+- 打印页每日 📝 Notes（key `note:YYYY-MM-DD`）
+- 冷媒单价（key `refrigerant_prices`，JSON blob）
+
+```bash
+npx wrangler kv namespace create BARK_COOLDOWN
+# 把返回的 id 填进 wrangler.jsonc 的 kv_namespaces 段
+```
+
+### D1 数据库（车型冷媒数据库用）
+
+```bash
+# 建库
+npx wrangler d1 create andy-auto-db
+# 返回的 database_id 填进 wrangler.jsonc 的 d1_databases 段，binding 用 "DB"
+
+# 建表
+npx wrangler d1 execute andy-auto-db --remote --file=schema.sql
+
+# 首次数据导入（可选）：从 CoolDrive GasBook2014 PDF 批量导入 1979 条车型
+# 把 PDF 放到 ~/Downloads/，然后：
+pip3 install --break-system-packages --user pdfplumber
+python3 scripts/parse_gasbook.py       # 看 parse 结果
+python3 scripts/gen_sql.py > /tmp/import.sql
+npx wrangler d1 execute andy-auto-db --remote --file=/tmp/import.sql
+```
+
+导入成功后浏览器打开 `/vehicles?secret=<VERIFY_TOKEN>` 应该能看到搜索框 + 1979 条数据。
+
 ### 变量（Settings → Variables and Secrets）
 
 **必填**

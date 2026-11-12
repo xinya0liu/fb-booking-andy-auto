@@ -281,6 +281,59 @@ Feel free to rebook anytime!
 - `/usr/bin/python3` 有 Full Disk Access（launchd 进程读 chat.db）
 - Terminal 有 Automation → Messages 权限（发 iMessage）
 
+## 车型冷媒数据库（`/vehicles`）
+
+打开 `https://<worker 网址>/vehicles?secret=<VERIFY_TOKEN>`。
+
+**用途**：快速查某辆车需要多少冷媒、成本是多少。1979 条数据来自 CoolDrive GasBook 2014，67 个品牌。
+
+### 搜索
+
+顶部搜索框支持自然语言：
+
+| 输入 | 行为 |
+|---|---|
+| `camry 2013` | 找 Camry 型号 **且** 2013 年落在适用年份区间的条目 |
+| `hilux` | 列出所有 Hilux 代别 |
+| `mazda cx-5 2018` | 支持连字符、空格、模糊匹配（`cx-5` 能找到 DB 里的 `CX5`） |
+| `camry hybrid` | 多关键词 AND 匹配 |
+
+- 搜索框识别到年份时，旁边会显示绿色 `year 2013` 芯片
+- 车型年份显示成 `2007-2013` 或 `2007+`（后者表示"从 2007 起至今"）
+
+### 冷媒单价 + 成本
+
+顶部黄色栏：
+```
+💰 Refrigerant unit price:  R134a [70] $/kg      saved
+```
+
+- 填入单价（$/kg）→ 500ms 后自动存到云端
+- Cost 列**实时更新**（不用刷新）
+- 多设备同步：手机填、电脑秒级看到
+
+### 增删改
+
+- **➕ Add vehicle** 按钮：弹 modal 填 Make/Model/年份/variant/冷媒/克数/notes
+- 每行末尾 **Edit** / **Delete** 按钮
+- Variant 字段用途：同款车不同引擎（Hybrid vs Petrol）冷媒规格不同时，分别填写
+
+### 用途场景
+
+**场景 1：客人问"我的 2013 Camry 做 regas 多少钱？"**
+1. 搜索框输入 `camry 2013`
+2. 看 Cost 列（基于你设的 R134a 单价计算）
+3. 加上你的人工费得出报价
+
+**场景 2：某批冷媒涨价**
+1. 在黄色栏把 `$/kg` 改大
+2. 所有车型的 Cost 列立刻更新
+3. 不用动 1979 条数据
+
+**场景 3：遇到数据库里没有的车**
+1. 问客人要车主手册 / 查 Haynes
+2. 点"+ Add vehicle"录进去，下次就有了
+
 ## 常见问题
 
 **客人超过 24 小时才回来确认？**

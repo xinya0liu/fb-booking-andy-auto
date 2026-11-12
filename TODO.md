@@ -64,11 +64,7 @@ Andy 打开审批页面
 ### 待实现
 
 - [ ] Suburb 距离数据库（Eagleby 40km 内）+ 定价区间（待讨论）
-- [x] **车型冷媒重量数据库**（Cloudflare D1 + Web 管理页 `/vehicles`）
-  - Schema: make, model, year_start/end, variant, refrigerant (R134a/R1234yf), charge_g, oil_type, oil_ml, notes
-  - CRUD API: `/vehicles/api?secret=…` (GET list/search, POST create, PUT/DELETE by id)
-  - 查询 API: `/vehicle-lookup?make=…&model=…&year=…&variant=…`（精确 variant 优先，fallback 到 generic 条目）
-  - 管理页: 搜索框 + 列表 + Add/Edit modal + Delete 确认；R1234yf 高亮标红
+- [x] **车型冷媒重量数据库**（Cloudflare D1 + Web 管理页 `/vehicles`）—— 见下面"车型冷媒数据库"段落完整说明
 - [ ] D1 对话状态表（PSID、车型、地址、状态、时间戳）
 - [ ] Facebook 多轮对话逻辑（状态机）
 - [ ] 审批页面（`/quote-review?id=xxx&secret=xxx`）
@@ -230,3 +226,58 @@ Andy 每单做完后想标记 3 个维度：
 - [x] 📝 Notes 栏：顶部可编辑文本框，防抖自动存 Cloudflare KV，每天独立 key，60 天 TTL；空的时候打印不显示
 - [x] 打印时字号 1.2x（0.94em 表格字号）+ 紧凑 padding
 - [x] 1-9 单压缩一页；10+ 自动在第 10 行强制换页，避免被截断
+
+---
+
+## 已完成 ✅ — 2026-11（车型冷媒数据库 + 打印页二次优化）
+
+**车型冷媒数据库（Cloudflare D1 + Web 管理页 `/vehicles`）**
+
+初版 schema + CRUD：
+- [x] D1 数据库 `andy-auto-db`（Oceania/SYD 区），binding `DB`
+- [x] `schema.sql`：`vehicles` 表（id, make, model, year_start, year_end, variant, refrigerant, charge_g, notes, updated_at）+ `idx_vehicles_make_model` 索引
+- [x] `wrangler.jsonc` d1_databases binding 挂好
+- [x] CRUD API `/vehicles/api?secret=…`
+  - GET list / search（带 `q=` 和 `year=` 参数）
+  - POST create（含字段校验：refrigerant 必须 R134a/R12，charge_g 1-5000，year 1950-2100）
+  - PUT ?id=… / DELETE ?id=…
+- [x] 查询 API `/vehicle-lookup?make&model&year&variant`：精确 variant 匹配优先，fallback 到 generic（variant 空）条目，用于未来的自动报价系统
+- [x] Admin HTML 页面：搜索框 + 列表 + Add/Edit modal + Delete 确认
+- [x] R1234yf 从 UI 完全移除（Andy 目前不提供这项服务；validation 只接受 R134a/R12；form dropdown、price bar、highlight 样式全部清理）
+- [x] 砍掉 oil_type + oil_ml 字段（远程 D1 `ALTER TABLE DROP COLUMN` 已执行）
+- [x] Admin 列表显示：Make / Model / Variant **拆成 3 列**（原来挤在一起）
+- [x] `.gitignore` 加 `.wrangler/`，不再跟踪本地 miniflare 缓存
+
+数据导入：
+- [x] 从 CoolDrive GasBook2014 Online PDF（72 页）解析 **1979 条**车型数据
+- [x] `scripts/parse_gasbook.py`：
+  - 按字体过滤 watermark（AvenirNextCondensed vs 内容字体 HelveticaNeueLTStd）
+  - 按坐标分列：model / notes / years / charge
+  - 已知 make 白名单防止误识别（如 `320i, 323i, M3` 不会被当新 make）
+  - 跨行条目合并（BMW 冷凝器变体等）
+- [x] `scripts/gen_sql.py`：
+  - 年份格式归一化（`88-92` → 1988-1992，`07>` → 2007-2100 哨兵值，`5/00-08` → 2000-2008 月份丢弃）
+  - charge 范围取中位数四舍五入到 5g（原范围保留在 notes）
+  - 从 model 拆出 variant（如 `A4 (8K)` → model=`A4`/variant=`8K`）
+  - refrigerant 默认 R134a（book 是 2014 的，R1234yf 车很少，遇到手动改）
+- [x] 覆盖 67 个品牌：Toyota 179, Nissan 129, Mercedes-Benz 113, Ford 112, BMW 90, Mitsubishi 90, Holden 84, Mazda 76, Honda 72 …
+
+搜索增强：
+- [x] 搜索框自动识别 4 位年份：`camry 2013` → text=`camry` + year=`2013`，后端 SQL 加 `? BETWEEN year_start AND year_end`
+- [x] 绿色 `year 2013` 芯片显示识别到的年份
+- [x] 搜索按 token 拆分，每个 token 都要匹配：`mazda cx-5 2018` 拆成 `['mazda','cx','5']`，能命中 DB 里的 `Mazda CX5`
+- [x] 开放式年份显示：`2007-2100` 改成 `2007+`（后端存储不变，纯显示层）
+
+冷媒价格 + Cost 列：
+- [x] 顶部黄色价格条：R134a $/kg 输入（R1234yf 已移除），防抖自动存 KV（`BARK_COOLDOWN` key `refrigerant_prices`，JSON blob）
+- [x] 新增 `GET/POST /refrigerant-prices?secret=…` endpoint
+- [x] Cost 列实时计算 `charge_g × 单价 ÷ 1000`，键盘输入价格时表格立刻更新（不用刷新）
+- [x] 决策记录：**不在每行存 cost**，避免冷媒价格一变要批量 UPDATE 1979 行；用单一 KV 值派生
+
+**打印页二次优化（`/print`）**
+- [x] 街道后缀 regex 扩充：新增 `Cr`（Crescent/Court）、`Gr`/`Grv`（Grove）、`Sq`（Square）、`Pkwy`（Parkway）、`Mews`、`Link`、`Rise`、`Quay`、`Bay`。例：`30 Bedford Cr Eagleby` → `30 Bedford Cr` / `Eagleby`
+- [x] Service 列优先级反转：**Calendar 标题（summary）优先**，fallback 到 description 的 `Service:` 行。之前 description-first 会让 Andy 手动编辑的标题（如 `Change O-ring, replace valves and regas`）在打印页仍显示旧的短 `Regas`
+- [x] 删除 `parseSummaryFields` 的 `MANUAL_SERVICE_KEYWORDS` 关键词替换逻辑（遗留的过度简化）
+  - Bug：匹到关键词就丢掉整句，例：`Repair Philip crv` → `repair`；`regas and orings` → `regas + oring`；`add uv dye and pressure test` → `add uv dye + uv dye + pressure test`（重复）
+  - 修复：手动标题直接用完整文本（减去 `$price` token），所见即所得
+  - AI 自动创建的 Calendar 路径不受影响（AI prompt 已要求保留多项目服务，后处理只 `.trim()` 不替换）

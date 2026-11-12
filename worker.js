@@ -1781,7 +1781,7 @@ function validateVehicle(v) {
   const ys = Number(v.year_start), ye = Number(v.year_end);
   if (!Number.isInteger(ys) || ys < 1950 || ys > 2100) errors.push('year_start 1950-2100');
   if (!Number.isInteger(ye) || ye < ys || ye > 2100) errors.push('year_end must be >= year_start and <= 2100');
-  if (!v.refrigerant || !/^R1234yf$|^R134a$|^R12$/i.test(String(v.refrigerant).trim())) errors.push('refrigerant must be R134a, R1234yf, or R12');
+  if (!v.refrigerant || !/^R134a$|^R12$/i.test(String(v.refrigerant).trim())) errors.push('refrigerant must be R134a or R12');
   const cg = Number(v.charge_g);
   if (!Number.isFinite(cg) || cg <= 0 || cg > 5000) errors.push('charge_g 1-5000');
   return errors;
@@ -1802,8 +1802,9 @@ function normalizeVehicle(v) {
 
 // Refrigerant unit prices in $/kg. Stored in BARK_COOLDOWN KV under a single
 // JSON key so Andy can adjust whenever the supplier changes rates.
+// R1234yf not offered as a service right now; add it back here if that changes.
 const PRICES_KV_KEY = 'refrigerant_prices';
-const REFRIGERANTS = ['R134a', 'R1234yf', 'R12'];
+const REFRIGERANTS = ['R134a', 'R12'];
 
 async function loadRefrigerantPrices(env) {
   if (!env.BARK_COOLDOWN) return {};
@@ -1849,6 +1850,7 @@ function vehiclesAdminPage(env, origin) {
   .prices-bar .prices-label { font-weight: bold; color: #7a5a00; }
   .prices-bar label { display: flex; align-items: center; gap: 5px; }
   .prices-bar input { width: 70px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95em; }
+  .prices-bar .unit { color: #7a5a00; font-size: 0.9em; }
   .prices-status { font-size: 0.82em; color: #888; margin-left: auto; }
   td.cost { white-space: nowrap; color: #060; font-weight: bold; }
   td.cost .cost-empty { color: #ccc; font-weight: normal; }
@@ -1865,7 +1867,6 @@ function vehiclesAdminPage(env, origin) {
   td.actions { white-space: nowrap; text-align: right; }
   td.actions button { font-size: 0.78em; padding: 3px 8px; margin-left: 4px; border-radius: 4px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
   td.actions button.del { color: #c22; border-color: #e5a; }
-  .r1234yf { color: #c40; font-weight: bold; }
   .empty { color: #888; font-style: italic; padding: 24px; text-align: center; }
   .msg { padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 0.9em; }
   .msg.err { background: #fee; color: #a00; border: 1px solid #f99; }
@@ -1885,9 +1886,8 @@ function vehiclesAdminPage(env, origin) {
 <div class="sub">Lookup data for AC regas quoting. R1234yf prices ~5-10x more than R134a — always double-check that field.</div>
 <div id="msg"></div>
 <div class="prices-bar">
-  <span class="prices-label">💰 Refrigerant unit price ($/kg):</span>
-  <label>R134a <input type="number" id="price-R134a" min="0" step="0.5" onchange="savePrices()" oninput="recomputeCosts()"></label>
-  <label>R1234yf <input type="number" id="price-R1234yf" min="0" step="1" onchange="savePrices()" oninput="recomputeCosts()"></label>
+  <span class="prices-label">💰 Refrigerant unit price:</span>
+  <label>R134a <input type="number" id="price-R134a" min="0" step="0.5" onchange="savePrices()" oninput="recomputeCosts()"> <span class="unit">$/kg</span></label>
   <span id="prices-status" class="prices-status"></span>
 </div>
 <div class="bar">
@@ -1917,7 +1917,6 @@ function vehiclesAdminPage(env, origin) {
         <div><label>Refrigerant *</label>
           <select id="f-refrig" required>
             <option value="R134a">R134a</option>
-            <option value="R1234yf">R1234yf</option>
             <option value="R12">R12 (legacy)</option>
           </select>
         </div>
@@ -1947,7 +1946,7 @@ async function loadPrices() {
   try {
     const r = await fetch(PRICES_API);
     currentPrices = await r.json();
-    for (const ref of ['R134a', 'R1234yf']) {
+    for (const ref of ['R134a']) {
       const el = document.getElementById('price-' + ref);
       if (el && currentPrices[ref] != null) el.value = currentPrices[ref];
     }
@@ -1956,7 +1955,7 @@ async function loadPrices() {
 
 function savePrices() {
   const body = {};
-  for (const ref of ['R134a', 'R1234yf', 'R12']) {
+  for (const ref of ['R134a', 'R12']) {
     const el = document.getElementById('price-' + ref);
     if (el && el.value !== '') body[ref] = Number(el.value);
   }
@@ -1974,7 +1973,7 @@ function savePrices() {
 
 function recomputeCosts() {
   // Update costs in-place without re-fetching from server.
-  for (const ref of ['R134a', 'R1234yf', 'R12']) {
+  for (const ref of ['R134a', 'R12']) {
     const el = document.getElementById('price-' + ref);
     if (el) currentPrices[ref] = el.value === '' ? null : Number(el.value);
   }
@@ -2020,13 +2019,12 @@ function render() {
     // year_end === 2100 is the sentinel for "open-ended / still in production"
     const years = v.year_end >= 2100 ? v.year_start + '+'
       : (v.year_start === v.year_end ? v.year_start : v.year_start + '-' + v.year_end);
-    const refClass = v.refrigerant === 'R1234yf' ? 'r1234yf' : '';
     return \`<tr>
       <td><strong>\${esc(v.make)}</strong></td>
       <td>\${esc(v.model)}</td>
       <td>\${esc(v.variant)}</td>
       <td>\${years}</td>
-      <td class="\${refClass}">\${esc(v.refrigerant)}</td>
+      <td>\${esc(v.refrigerant)}</td>
       <td>\${v.charge_g}g</td>
       <td class="cost">\${costCell(v)}</td>
       <td>\${esc(v.notes)}</td>

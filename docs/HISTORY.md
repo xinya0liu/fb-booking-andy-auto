@@ -117,6 +117,37 @@ App 只有标准权限时，查不到一般客人的个人资料，通知上的�
 
 有一次 GitHub 上已经是新版本、Cloudflare 的 Build 也显示 Ready，线上却还是旧代码。版本列表里最新那笔显示 “Empty commit message”，很可能是在 Edit code 页面按了 Deploy，把旧代码重新部署。用一个空提交（`git commit --allow-empty`）重新触发部署后恢复正常。之后的规则：Edit code 只用来查看线上代码，不在那里按 Deploy。
 
+### 15. 车型冷媒数据库选 D1 不选 KV
+
+数据量近 2000 条，有搜索（按品牌/年份过滤）和多条件查询需求。KV 是键值存储，做这种查询要全部拉下来在代码里 filter，不优雅。D1 是 Cloudflare 的 SQLite 服务，免费额度覆盖远超业务需要，天生适合这种关系型查询。
+
+Admin 页用 Fetch API 直接对接 `/vehicles/api`，无需额外 ORM 或框架。
+
+### 16. 冷媒单价存 KV 而不是数据库字段
+
+冷媒价格会随供应商定价偶尔变动。如果把 `cost` 字段存到每一行 `vehicles` 表，每次价格变动要 UPDATE 1979 行。改成单价存 KV（`refrigerant_prices` JSON blob），打印/显示时实时算 `charge_g × 单价 ÷ 1000`。
+
+好处：价格变动只改一个值，瞬间所有车型的 Cost 都更新；数据表保持纯净。
+
+### 17. 打印页字体和分页策略
+
+Andy 一天最多 9 单的时候居多。原先 landscape A4 一页只能塞 ~8 单，第 9 单有时被静默剪掉。改成：
+- 打印时字体放大约 1.2x（0.94em），padding 压到 4-5px
+- 一页目标容量 9 单
+- 第 10 行强制 `page-break-before: always`，确保超过 9 单必然翻页不丢失
+
+屏幕显示不变，只在 `@media print` 范围内生效。
+
+### 18. 地址规范化两层防御
+
+AI 的 prompt 已经告诉它"不要带 QLD/Australia/邮编"，但模型偶尔还是会保留。地址干净不干净直接影响打印和 Google Maps 导航。
+
+两层防御：
+1. **写入时**：AI 后处理 + 历史地址 fallback 都走 `normalizeAddress` 一遍
+2. **显示时**：`splitAddress` 调用前再过一次 `normalizeAddress`
+
+这样即使有脏数据漏进 Calendar，打印页也会把它清干净再分两行显示。还顺手解决了 `Unit 84` 被写在地址尾部（应该在头部）的问题。
+
 ## 时间线
 
 | 日期 | 事件 |
@@ -127,6 +158,14 @@ App 只有标准权限时，查不到一般客人的个人资料，通知上的�
 | 2026-10-21 | 新 App 改为 Live；用朋友实测确认一般客人可用；客人名字改从对话参与者找 |
 | 2026-10-22 | 加入 AI 读对话、自动回复客人；撞时间与时间已过检查；一键修改；后备机制；关键词定案为五个开头 |
 | 2026-10-22 | 测试确认 iPhone 上无法直接打开指定对话，链接改为客人卡片；排除部署没有更新的问题 |
+| 2026-11-上旬 | iMessage/SMS 稳定性：macOS Sonoma 的 attributedBody 用 NSUnarchiver 正确解码；heuristic fallback 过滤 plist 元数据；clean_contact_name 重写剥离任意日期前缀；scan_keywords SQL 加 LEFT JOIN fallback |
+| 2026-11-上旬 | AI 提取稳定性：trimToLastConfirmation 修多行 ✅ bug；redactOldConfirmationTimes 保留地址但清掉旧时间；appendTriggerMarker 明示触发点；prompt 禁止从 contact label 提取任何预约字段 |
+| 2026-11-上旬 | 地址规范化：normalizeAddress 剥离 QLD/Australia/邮编，自动把末尾 Unit X 移到前端；AI 后处理、历史地址 fallback、splitAddress 三处调用 |
+| 2026-11-中旬 | 打印页大改版：街道/suburb 两行显示、Customer+Mobile 合并、B&W 友好 pill、顶部 📝 Notes 栏（KV 存）、紧凑打印（9 单/页，10+ 自动换页）；Service 列优先读 Calendar 标题 |
+| 2026-11-中旬 | 车型冷媒数据库：Cloudflare D1 建 `vehicles` 表 + `/vehicles` Admin 页 + CRUD/查询 API；从 CoolDrive GasBook2014 PDF 解析导入 1979 条数据（67 个品牌） |
+| 2026-11-中旬 | 冷媒单价 KV + 实时 Cost 列（价格变动一键生效，不用批量 UPDATE）；R1234yf 从 UI 移除（Andy 目前不做这项服务） |
+| 2026-11-中旬 | 车型搜索增强：自动识别年份 `camry 2013` → text + year；按 token 拆分支持 `cx-5` 匹配 `CX5`；开放式年份显示 `2007+` |
+| 2026-11-13 | 建立"文档同步要求"规则：README/USER_GUIDE/SETUP/MAINTENANCE/TODO/HISTORY 需要和大改动一起更新；小修不用 |
 
 ## 未来可以考虑的方向
 

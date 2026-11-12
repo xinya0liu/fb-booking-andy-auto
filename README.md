@@ -88,13 +88,28 @@ Mac 的 server.py 用 AppleScript 自动发 iMessage 给客人
 | 文件 | 内容 |
 |---|---|
 | `worker.js` | 全部程序代码（Cloudflare Worker） |
-| `wrangler.jsonc` | Cloudflare 部署设置。`keep_vars: true` 让部署时保留后台填的变量，**不要删掉** |
+| `wrangler.jsonc` | Cloudflare 部署设置，含 KV 和 D1 绑定。`keep_vars: true` 让部署时保留后台填的变量，**不要删掉** |
+| `schema.sql` | D1 车型冷媒数据库的 schema。首次部署用 `npx wrangler d1 execute andy-auto-db --remote --file=schema.sql` |
+| `server.py` | Andy Mac 上的 iMessage 常驻服务源码（也放在 `/Users/Shared/server.py` 供跨账户复制） |
+| `scripts/parse_gasbook.py` 等 | 一次性数据导入脚本（如从 CoolDrive GasBook PDF 批量导入 1979 条车型数据） |
 | `tests/mock-icloud-test.mjs` | 本地测试：用模拟的 iCloud、Facebook、AI 跑完整流程，不需要任何密码 |
-| `/Users/shared/server.py` | Andy Mac 上的 iMessage 常驻服务（不在 git 里，放在共享目录供跨账户复制） |
-| [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | 使用说明：五个开头、常用句子、时间写法、通知的意思、常见问题 |
+| [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | 使用说明：五个开头、常用句子、时间写法、通知的意思、常见问题、打印页、车型数据库查询 |
 | [`docs/SETUP.md`](docs/SETUP.md) | 从零开始的完整设置步骤 |
-| [`docs/MAINTENANCE.md`](docs/MAINTENANCE.md) | 日常维护、故障排查、更换密码、修改代码、回滚、费用 |
+| [`docs/MAINTENANCE.md`](docs/MAINTENANCE.md) | 日常维护、故障排查、更换密码、修改代码、回滚、费用、D1 数据管理 |
 | [`docs/HISTORY.md`](docs/HISTORY.md) | 建立原因、过程、每个设计决定的理由 |
+
+## Worker 的网页路径
+
+| 路径 | 用途 |
+|---|---|
+| `/check?token=…` | 系统健康检查（iCloud 登录、日历存在） |
+| `/print?secret=…[&date=today|tomorrow|YYYY-MM-DD]` | 当日/明日/指定日期的预约打印页（含每日 📝 Notes、紧凑布局、10+ 单自动换页） |
+| `/notes?secret=…&date=…` | 每日备注 KV 读写（打印页用） |
+| `/vehicles?secret=…` | 车型冷媒数据库管理页（1979 条车型 + 实时成本计算） |
+| `/vehicles/api?secret=…` | CRUD API（GET list/search、POST、PUT、DELETE） |
+| `/vehicle-lookup?secret=…&make=…&model=…&year=…` | 车型精确查询 API（给未来自动报价系统用） |
+| `/refrigerant-prices?secret=…` | 冷媒单价 KV 读写（$/kg） |
+| `/c?psid=…` / `/go?…` | 客人卡片与链接中转 |
 
 ## 快速检查系统是否正常
 
@@ -111,3 +126,17 @@ https://<worker 网址>/check?token=<VERIFY_TOKEN>
 ## 安全提醒
 
 这个仓库是**公开的**。所有密码、令牌（Apple App 专用密码、Meta 令牌、Anthropic API Key、Bark key 等）都只放在 Cloudflare 后台的 Variables and Secrets 里，**绝对不要写进仓库的任何文件**。
+
+## 文档同步要求
+
+每次做"**比较大的更改**"（新功能、新端点、新页面、新字段、架构调整、迁移数据等）时，要同步更新以下 5 个文档，不能只提交代码：
+
+- **本 `README.md`** — 顶层说明：功能概览、端点表、文件说明
+- [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) — 用户视角：怎么用
+- [`docs/SETUP.md`](docs/SETUP.md) — 新部署的设置步骤（有新增 secret、新 binding、新一次性迁移脚本就要记）
+- [`docs/MAINTENANCE.md`](docs/MAINTENANCE.md) — 运维视角：endpoints 列表、worker.js 结构表、故障排查、新增的 KV/D1 维护命令
+- [`TODO.md`](TODO.md) — 完成项标记、新 TODO 加入；底部按日期分段的"已完成"记录改动详情
+
+`docs/HISTORY.md` 也要在时间线表加一笔（包含日期和一句话摘要）。
+
+小修（bug fix、一行样式调整、拼写）不用更新文档，只写 commit message 即可。
