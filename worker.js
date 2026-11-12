@@ -1817,6 +1817,8 @@ function vehiclesAdminPage(env, origin) {
   .sub { color: #666; font-size: 0.85em; margin-bottom: 16px; }
   .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
   .bar input[type=search] { flex: 1; min-width: 180px; padding: 7px 10px; font-size: 0.95em; border: 1px solid #ccc; border-radius: 6px; }
+  .search-hint { font-size: 0.78em; color: #888; white-space: nowrap; }
+  .search-hint .year-chip { display: inline-block; background: #efe; border: 1px solid #9c9; color: #060; padding: 1px 6px; border-radius: 10px; font-weight: bold; margin-right: 4px; }
   .btn { padding: 7px 14px; border-radius: 6px; font-size: 0.9em; border: 1px solid #2a7a2a; color: #fff; background: #2a7a2a; cursor: pointer; }
   .btn:hover { background: #1e5c1e; }
   .btn.alt { background: #fff; color: #333; border-color: #ccc; }
@@ -1850,7 +1852,8 @@ function vehiclesAdminPage(env, origin) {
 <div class="sub">Lookup data for AC regas quoting. R1234yf prices ~5-10x more than R134a — always double-check that field.</div>
 <div id="msg"></div>
 <div class="bar">
-  <input type="search" id="q" placeholder="Search make / model / variant…" oninput="debouncedLoad()">
+  <input type="search" id="q" placeholder="Search e.g. 'camry 2013', 'hilux', 'mazda cx-5 2018'…" oninput="debouncedLoad()">
+  <span id="search-hint" class="search-hint"></span>
   <button class="btn" onclick="openAdd()">+ Add vehicle</button>
 </div>
 <div id="tbl"></div>
@@ -1906,8 +1909,17 @@ function flash(text, ok) {
   setTimeout(() => { m.textContent = ''; m.className = ''; }, 3500);
 }
 async function load() {
-  const q = document.getElementById('q').value.trim();
-  const r = await fetch(API + (q ? '&q=' + encodeURIComponent(q) : ''));
+  const raw = document.getElementById('q').value.trim();
+  // Pull any 4-digit year out of the query (1950-2100); rest is the text search.
+  const yearMatch = raw.match(/\\b(19[5-9]\\d|20\\d{2}|2100)\\b/);
+  const year = yearMatch ? yearMatch[1] : '';
+  const text = raw.replace(/\\b(19[5-9]\\d|20\\d{2}|2100)\\b/, '').replace(/\\s+/g, ' ').trim();
+  const hint = document.getElementById('search-hint');
+  hint.innerHTML = year ? ('<span class="year-chip">year ' + year + '</span>') : '';
+  const params = [];
+  if (text) params.push('q=' + encodeURIComponent(text));
+  if (year) params.push('year=' + encodeURIComponent(year));
+  const r = await fetch(API + (params.length ? '&' + params.join('&') : ''));
   const data = await r.json();
   currentRows = data.vehicles || [];
   render();
@@ -2019,20 +2031,27 @@ async function vehiclesApi(req, env) {
 
   if (req.method === 'GET') {
     const q = (url.searchParams.get('q') || '').trim();
-    let rows;
-    if (q) {
-      const like = `%${q.replace(/[%_]/g, '\\$&')}%`;
-      const { results } = await env.DB.prepare(
-        `SELECT * FROM vehicles WHERE make LIKE ? COLLATE NOCASE OR model LIKE ? COLLATE NOCASE OR variant LIKE ? COLLATE NOCASE ORDER BY make, model, year_start`
-      ).bind(like, like, like).all();
-      rows = results;
-    } else {
-      const { results } = await env.DB.prepare(
-        `SELECT * FROM vehicles ORDER BY make COLLATE NOCASE, model COLLATE NOCASE, year_start`
-      ).all();
-      rows = results;
+    const yearParam = url.searchParams.get('year');
+    const year = yearParam && /^\d{4}$/.test(yearParam) ? Number(yearParam) : null;
+    const where = [];
+    const binds = [];
+    // Tokenise the text query: each whitespace/hyphen-separated piece must
+    // appear somewhere in make/model/variant. Lets "cx-5" match "CX5" and
+    // "mazda cx 5" match a Mazda CX5 row.
+    const tokens = q.split(/[\s\-_/]+/).filter(Boolean);
+    for (const t of tokens) {
+      const like = `%${t.replace(/[%_]/g, '\\$&')}%`;
+      where.push('(make LIKE ? COLLATE NOCASE OR model LIKE ? COLLATE NOCASE OR variant LIKE ? COLLATE NOCASE)');
+      binds.push(like, like, like);
     }
-    return jsonResponse({ vehicles: rows });
+    if (year !== null) {
+      where.push('(? BETWEEN year_start AND year_end)');
+      binds.push(year);
+    }
+    const sql = `SELECT * FROM vehicles ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ` +
+      `ORDER BY make COLLATE NOCASE, model COLLATE NOCASE, year_start`;
+    const { results } = await env.DB.prepare(sql).bind(...binds).all();
+    return jsonResponse({ vehicles: results });
   }
 
   if (req.method === 'POST') {
