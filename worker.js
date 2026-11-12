@@ -1401,17 +1401,6 @@ function buildReminderMessage(e, cfg, env) {
   return lines.join('\n');
 }
 
-const MANUAL_SERVICE_KEYWORDS = [
-  'add uv dye', 'uv dye',
-  'leak detection', 'leak check', 'leak test',
-  'pressure check', 'pressure test',
-  'service check', 'ac service', 'ac check',
-  'o-ring', 'oring',
-  'regas', 're-gas',
-  'valve',
-  'repair',
-];
-
 // Normalize a free-form address: strip state/country/postcode suffixes and
 // move misplaced unit/flat numbers from the tail back to the head where they
 // belong. Safe to apply multiple times (idempotent).
@@ -1468,11 +1457,10 @@ function parseSummaryFields(summary) {
   const price = priceMatch ? priceMatch[0] : '';
   const withoutPrice = s.replace(/\$[\d,]+/, '').trim();
   if (!hasName) {
-    // Free-form manual entry — scan for known service keywords
-    const lower = withoutPrice.toLowerCase();
-    const found = MANUAL_SERVICE_KEYWORDS.filter(kw => lower.includes(kw));
-    found.sort((a, b) => lower.indexOf(a) - lower.indexOf(b));
-    return { service: found.join(' + ') || withoutPrice, price, vehicle: '' };
+    // Free-form manual entry — use the whole title (minus price) as the service
+    // so edits like "Repair Philip crv" show verbatim instead of being reduced
+    // to a single matched keyword.
+    return { service: withoutPrice, price, vehicle: '' };
   }
   // System format — split service from vehicle: vehicle usually starts with a 4-digit year
   const yearIdx = withoutPrice.search(/\b(19|20)\d{2}\b/);
