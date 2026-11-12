@@ -70,7 +70,9 @@ def decode_text(text, attributed_body):
         for s in re.findall(rb'[a-zA-Z][\x20-\x7e]{3,}', blob):
             if s in _TS_SKIP:
                 continue
-            if s.startswith(b'NS') or s.startswith(b'__k') or s.startswith(b'CF'):
+            if s.startswith(b'NS') or s.startswith(b'__k') or s.startswith(b'CF') or s.startswith(b'kIM'):
+                continue
+            if re.search(rb'\$[a-zA-Z]', s):  # plist metadata: $version, $archiver, $class
                 continue
             if len(s) > len(best):
                 best = s
