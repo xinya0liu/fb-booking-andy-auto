@@ -1612,13 +1612,13 @@ async function printPage(env, origin, dateParam = '') {
   .badge-sms { background: #111; color: #fff; }
   .badge-fb { background: #fff; color: #111; border: 1px solid #111; padding: 0 4px; }
   td.time { white-space: nowrap; font-weight: bold; font-size: 1.05em; }
-  td.svc { max-width: 170px; word-break: break-word; }
+  td.svc { max-width: 210px; word-break: break-word; }
   td.price { white-space: nowrap; }
-  td.veh  { max-width: 130px; word-break: break-word; }
-  td.addr { max-width: 220px; word-break: break-word; line-height: 1.3; }
+  td.veh  { max-width: 170px; word-break: break-word; }
+  td.addr { max-width: 260px; word-break: break-word; line-height: 1.3; }
   td.addr .addr-street { display: block; color: #333; }
   td.addr .addr-suburb { display: block; color: #111; font-weight: bold; }
-  td.who { line-height: 1.3; }
+  td.who { max-width: 130px; line-height: 1.3; word-break: break-word; }
   td.who .who-name { display: block; font-weight: bold; }
   td.who .who-mobile { display: block; color: #555; font-size: 0.9em; }
   td.who .who-mobile-only { display: block; color: #111; }
