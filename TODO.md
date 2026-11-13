@@ -269,6 +269,14 @@ bookings_meta (
 - [ ] **Xero / MYOB 会计集成**
 - [ ] **电子发票 SMS 自动发送**
 
+### 车型数据库需要补齐 / 修正
+
+- [ ] **GasBook2014 已过时** —— 覆盖范围主要到 2013，很多 2014+ 的车（Qashqai, DMax 2017, i40, C250 W205, IX35, CX-5 2014+ 等）都没有。需要补充新数据源：
+  - Haynes Online / Autodata 订阅
+  - 客人上门前要 AC 标签照片
+  - 做完一单新车型 → 顺手录进 `/vehicles`
+- [ ] **Hyundai 数据被解析器搞砸** —— GasBook 原 PDF 里 "Dual A/C" 是 Hyundai 多个 model 的变体选项，但 parser 把 "Dual A/C" 当成 model 名字存成 48 条。要手动清理或重跑 parser 把它当 variant。类似问题可能出现在其他品牌。
+
 ### 备选 / 低优先（记下来但可能不做）
 
 - 忙闲时段图表
