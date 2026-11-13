@@ -290,7 +290,8 @@ Feel free to rebook anytime!
 每做完一单 → 点那行 → 弹窗 → 选：
 - **Status**：✓ Done（默认）/ ◐ Partial（只做了检查）/ ✗ No-show / — Cancel
 - **Payment**：Cash / PayID / Mixed / Unpaid
-- **Actual amount ($)**：默认是原报价，可改（例如只收检查费 $50）
+  - 选 Mixed 会弹出两个输入框：Cash 和 PayID 各收了多少，下方实时显示 Total
+- **Actual amount ($)**：默认是原报价，可改（例如只收检查费 $50）。Mixed 情况下不填这个，系统自动用 Cash+PayID 的和
 - **Our notes**：私人备注（例如"客人车坏得没法修"）
 
 默认值预填到位，最少**点 2 下 → Save**就完成一单。

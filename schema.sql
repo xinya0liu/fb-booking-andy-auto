@@ -50,8 +50,10 @@ CREATE TABLE IF NOT EXISTS bookings_meta (
   phone           TEXT,              -- snapshot for fast queries
   psid            TEXT,              -- snapshot for fast queries
   status          TEXT,              -- done / partial / no_show / cancelled
-  actual_amount   INTEGER,           -- cents, nullable
+  actual_amount   INTEGER,           -- cents, nullable; always the total collected
   payment_method  TEXT,              -- cash / payid / mixed / unpaid
+  cash_portion    INTEGER,           -- cents, only when payment_method='mixed'
+  payid_portion   INTEGER,           -- cents, only when payment_method='mixed'
   paid_at         INTEGER,
   our_notes       TEXT NOT NULL DEFAULT '',
   updated_at      INTEGER NOT NULL

@@ -1857,7 +1857,7 @@ function renderBadge(idx) {
 function renderCollectedLine() {
   const line = document.getElementById('collected-line');
   if (!line || !window.BOOKINGS.length) { if (line) line.textContent = ''; return; }
-  let collected = 0, cash = 0, payid = 0, mixed = 0, unpaid = 0;
+  let collected = 0, cash = 0, payid = 0, unpaid = 0;
   let unpaidCount = 0, markedCount = 0;
   for (const b of window.BOOKINGS) {
     const m = window.META[b.uid];
@@ -1867,14 +1867,16 @@ function renderCollectedLine() {
     if (m.status === 'done' || m.status === 'partial') collected += amt;
     if (m.payment_method === 'cash') cash += amt;
     else if (m.payment_method === 'payid') payid += amt;
-    else if (m.payment_method === 'mixed') mixed += amt;
+    else if (m.payment_method === 'mixed') {
+      cash += (m.cash_portion || 0);
+      payid += (m.payid_portion || 0);
+    }
     else if (m.payment_method === 'unpaid') { unpaid += amt; unpaidCount++; }
   }
   if (!markedCount) { line.textContent = ''; return; }
   const bits = [\`<strong>Collected \${fmtMoney(collected)}</strong>\`];
   if (cash) bits.push(\`Cash \${fmtMoney(cash)}\`);
   if (payid) bits.push(\`PayID \${fmtMoney(payid)}\`);
-  if (mixed) bits.push(\`Mixed \${fmtMoney(mixed)}\`);
   if (unpaid) bits.push(\`<span class="pay-unpaid">Unpaid \${fmtMoney(unpaid)} (\${unpaidCount})</span>\`);
   line.innerHTML = bits.join(' · ');
 }
@@ -1893,6 +1895,9 @@ function openBookingModal(idx) {
   highlightBtnGroup('bm-method', defaultMethod);
   const amt = m.actual_amount != null ? (m.actual_amount / 100).toFixed(2) : (b.quoted_cents ? (b.quoted_cents / 100).toFixed(2) : '');
   document.getElementById('bm-amount').value = amt;
+  document.getElementById('bm-cash-portion').value = m.cash_portion != null ? (m.cash_portion / 100).toFixed(2) : '';
+  document.getElementById('bm-payid-portion').value = m.payid_portion != null ? (m.payid_portion / 100).toFixed(2) : '';
+  togglePaymentFields(defaultMethod);
   document.getElementById('bm-our-notes').value = m.our_notes || '';
   document.getElementById('bm-clear').style.display = m.status ? '' : 'none';
 
@@ -1927,6 +1932,28 @@ function highlightBtnGroup(groupId, value) {
 
 function selectInGroup(groupId, value) {
   highlightBtnGroup(groupId, value);
+  if (groupId === 'bm-method') togglePaymentFields(value);
+}
+
+function togglePaymentFields(method) {
+  const single = document.getElementById('bm-amount-group');
+  const mixed = document.getElementById('bm-mixed-group');
+  if (method === 'mixed') {
+    single.style.display = 'none';
+    mixed.style.display = '';
+    updateMixedTotal();
+  } else {
+    single.style.display = '';
+    mixed.style.display = 'none';
+  }
+}
+
+function updateMixedTotal() {
+  const c = parseFloat(document.getElementById('bm-cash-portion').value) || 0;
+  const p = parseFloat(document.getElementById('bm-payid-portion').value) || 0;
+  const total = c + p;
+  const el = document.getElementById('bm-mixed-total');
+  if (el) el.textContent = total > 0 ? 'Total: \$' + total.toFixed(2) : '';
 }
 
 function getSelectedInGroup(groupId) {
@@ -1960,22 +1987,32 @@ async function saveBookingModal() {
       updateRowCells(currentIdx);
     }
     // 2) Save Mark tab (always; it's the primary intent)
+    const method = getSelectedInGroup('bm-method');
     const markBody = {
       status: getSelectedInGroup('bm-status'),
-      payment_method: getSelectedInGroup('bm-method'),
-      actual_amount: document.getElementById('bm-amount').value,
+      payment_method: method,
       our_notes: document.getElementById('bm-our-notes').value,
       phone: b.phone || '',
       psid: b.psid || '',
       customer_name: b.name || '',
     };
+    if (method === 'mixed') {
+      markBody.cash_portion = document.getElementById('bm-cash-portion').value;
+      markBody.payid_portion = document.getElementById('bm-payid-portion').value;
+    } else {
+      markBody.actual_amount = document.getElementById('bm-amount').value;
+    }
     const r2 = await fetch(window.META_URL + '&uid=' + encodeURIComponent(b.uid), {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(markBody),
     });
     if (!r2.ok) throw new Error((await r2.json()).error || 'mark failed');
     // Update local meta cache
-    const amtCents = markBody.actual_amount ? Math.round(parseFloat(markBody.actual_amount) * 100) : null;
-    window.META[b.uid] = { ...window.META[b.uid], status: markBody.status, payment_method: markBody.payment_method, actual_amount: amtCents, our_notes: markBody.our_notes };
+    const toCents = v => v ? Math.round(parseFloat(v) * 100) : null;
+    const cashCents = method === 'mixed' ? (toCents(markBody.cash_portion) || 0) : null;
+    const payidCents = method === 'mixed' ? (toCents(markBody.payid_portion) || 0) : null;
+    const amtCents = method === 'mixed' ? (cashCents + payidCents) : toCents(markBody.actual_amount);
+    window.META[b.uid] = { ...window.META[b.uid], status: markBody.status, payment_method: method,
+      actual_amount: amtCents, cash_portion: cashCents, payid_portion: payidCents, our_notes: markBody.our_notes };
     renderBadge(currentIdx);
     renderCollectedLine();
     closeBookingModal();
@@ -2055,9 +2092,21 @@ ${equipmentBanner}${empty}${tableHtml}
           <button data-value="unpaid" onclick="selectInGroup('bm-method','unpaid')">Unpaid</button>
         </div>
       </div>
-      <div class="bm-group">
+      <div class="bm-group" id="bm-amount-group">
         <label>Actual amount ($)</label>
         <input type="number" id="bm-amount" step="0.01" min="0" inputmode="decimal">
+      </div>
+      <div class="bm-group" id="bm-mixed-group" style="display:none;">
+        <label>Split: Cash + PayID ($)</label>
+        <div class="bm-row" style="margin-bottom:0;">
+          <div>
+            <input type="number" id="bm-cash-portion" step="0.01" min="0" inputmode="decimal" placeholder="Cash" oninput="updateMixedTotal()">
+          </div>
+          <div>
+            <input type="number" id="bm-payid-portion" step="0.01" min="0" inputmode="decimal" placeholder="PayID" oninput="updateMixedTotal()">
+          </div>
+        </div>
+        <div id="bm-mixed-total" style="font-size:0.85em;color:#666;margin-top:4px;"></div>
       </div>
       <div class="bm-group">
         <label>Our notes (private)</label>
@@ -2234,6 +2283,15 @@ async function upsertCustomer(env, { phone, psid, name, amount_cents, now }) {
 }
 
 async function bookingsMetaHandler(req, url, env) {
+  try {
+    return await bookingsMetaHandlerInner(req, url, env);
+  } catch (e) {
+    console.error('bookingsMetaHandler', e);
+    return jsonResponse({ error: e.message || String(e) }, 500);
+  }
+}
+
+async function bookingsMetaHandlerInner(req, url, env) {
   if (!env.DB) return jsonResponse({ error: 'D1 binding missing' }, 500);
   const uid = url.searchParams.get('uid');
   const date = url.searchParams.get('date');  // YYYY-MM-DD — bulk read by day
@@ -2256,10 +2314,19 @@ async function bookingsMetaHandler(req, url, env) {
     const body = await req.json();
     const status = body.status && BOOKING_STATUSES.has(body.status) ? body.status : null;
     const method = body.payment_method && PAYMENT_METHODS.has(body.payment_method) ? body.payment_method : null;
-    let amountCents = null;
-    if (body.actual_amount !== undefined && body.actual_amount !== '' && body.actual_amount !== null) {
-      const n = Number(body.actual_amount);
-      if (Number.isFinite(n) && n >= 0 && n < 1e8) amountCents = Math.round(n * 100);
+    const dollarsToCents = v => {
+      if (v === undefined || v === '' || v === null) return null;
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 && n < 1e8 ? Math.round(n * 100) : null;
+    };
+    let amountCents = dollarsToCents(body.actual_amount);
+    let cashPortion = null, payidPortion = null;
+    // Mixed: client sends cash_portion + payid_portion. Backend derives
+    // actual_amount = cash + payid so the total is always canonical.
+    if (method === 'mixed') {
+      cashPortion = dollarsToCents(body.cash_portion) || 0;
+      payidPortion = dollarsToCents(body.payid_portion) || 0;
+      amountCents = cashPortion + payidPortion;
     }
     const now = Math.floor(Date.now() / 1000);
     const phone = (body.phone || '').trim() || null;
@@ -2268,18 +2335,20 @@ async function bookingsMetaHandler(req, url, env) {
     const paidAt = (status === 'done' || status === 'partial') ? now : null;
 
     await env.DB.prepare(
-      `INSERT INTO bookings_meta (calendar_uid, phone, psid, status, actual_amount, payment_method, paid_at, our_notes, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO bookings_meta (calendar_uid, phone, psid, status, actual_amount, payment_method, cash_portion, payid_portion, paid_at, our_notes, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(calendar_uid) DO UPDATE SET
          phone = COALESCE(excluded.phone, phone),
          psid  = COALESCE(excluded.psid, psid),
          status = excluded.status,
          actual_amount = excluded.actual_amount,
          payment_method = excluded.payment_method,
+         cash_portion = excluded.cash_portion,
+         payid_portion = excluded.payid_portion,
          paid_at = excluded.paid_at,
          our_notes = excluded.our_notes,
          updated_at = excluded.updated_at`
-    ).bind(uid, phone, psid, status, amountCents, method, paidAt, notes, now).run();
+    ).bind(uid, phone, psid, status, amountCents, method, cashPortion, payidPortion, paidAt, notes, now).run();
 
     // Side effect: upsert customer and bump totals
     if (phone || psid) {
@@ -2352,9 +2421,14 @@ async function reportPage(req, url, env) {
     else if (r.status === 'no_show') countNoShow++;
     else if (r.status === 'cancelled') countCancel++;
     if (r.status === 'done' || r.status === 'partial') collected += amt;
+    // Split mixed into its cash/payid portions so the breakdown is accurate
     if (r.payment_method === 'cash') { cash += amt; byMethod.cash++; }
     else if (r.payment_method === 'payid') { payid += amt; byMethod.payid++; }
-    else if (r.payment_method === 'mixed') { mixed += amt; byMethod.mixed++; }
+    else if (r.payment_method === 'mixed') {
+      cash += (r.cash_portion || 0);
+      payid += (r.payid_portion || 0);
+      byMethod.mixed++;
+    }
     else if (r.payment_method === 'unpaid') { unpaidAmt += amt; byMethod.unpaid++; countUnpaid++; }
     // Group by local day
     const dt = new Date(r.paid_at * 1000);
@@ -2365,6 +2439,10 @@ async function reportPage(req, url, env) {
     if (r.status === 'done' || r.status === 'partial') bucket.collected += amt;
     if (r.payment_method === 'cash') bucket.cash += amt;
     else if (r.payment_method === 'payid') bucket.payid += amt;
+    else if (r.payment_method === 'mixed') {
+      bucket.cash += (r.cash_portion || 0);
+      bucket.payid += (r.payid_portion || 0);
+    }
     else if (r.payment_method === 'unpaid') bucket.unpaid += amt;
     byDay.set(dayKey, bucket);
   }
@@ -2466,26 +2544,46 @@ ${metas.length === 0 ? `
 }
 
 async function bookingEditHandler(req, url, env) {
+  try {
+    return await bookingEditHandlerInner(req, url, env);
+  } catch (e) {
+    console.error('bookingEditHandler', e);
+    return jsonResponse({ error: e.message || String(e) }, 500);
+  }
+}
+
+async function bookingEditHandlerInner(req, url, env) {
   // Edit a Calendar event's fields (Service/Price/Vehicle/Address/Customer/Mobile/Notes).
-  // Reuses the same CalDAV update flow as SMS/FB booking updates.
   const uid = url.searchParams.get('uid');
   if (!uid) return jsonResponse({ error: 'uid required' }, 400);
   const body = await req.json();
   const cfg = config(env);
 
-  // Find the event by UID
+  // Find the event: iCloud's text-match prop-filter is unreliable, so we
+  // pull a wide time window and match the UID in-memory.
   const cal = await calendarUrl(env);
-  const findBody = `${XML_HEAD}<c:calendar-query ${NS}><d:prop><d:getetag/><c:calendar-data/></d:prop>` +
-    `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
-    `<c:prop-filter name="UID"><c:text-match>${icsEsc(uid)}</c:text-match></c:prop-filter>` +
-    `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`;
-  const r = await dav(env, 'REPORT', cal, { depth: 1, body: findBody });
-  const resp = xmlOne(r.text, 'response');
-  if (!resp) return jsonResponse({ error: 'event not found' }, 404);
-  const ics = xmlText(xmlOne(resp, 'calendar-data'));
-  const href = new URL(xmlText(xmlOne(resp, 'href')), cal).href;
-  const etag = xmlText(xmlOne(resp, 'getetag')) || null;
-  const target = parseEvent(ics, cfg.tz);
+  const now = Date.now();
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><d:getetag/><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(now - 400 * 864e5)}" end="${utcStamp(now + 400 * 864e5)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+  let target = null, href = null, etag = null, ics = '';
+  for (const resp of xmlAll(r.text, 'response')) {
+    const calData = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!calData.includes('BEGIN:VEVENT')) continue;
+    const parsed = parseEvent(calData, cfg.tz);
+    if (parsed.uid === uid) {
+      target = parsed;
+      ics = calData;
+      href = new URL(xmlText(xmlOne(resp, 'href')), cal).href;
+      etag = xmlText(xmlOne(resp, 'getetag')) || null;
+      break;
+    }
+  }
+  if (!target) return jsonResponse({ error: 'event not found for uid ' + uid }, 404);
 
   const changes = {
     SEQUENCE: [`SEQUENCE:${(target.sequence || 0) + 1}`],
