@@ -1690,6 +1690,8 @@ async function printPage(env, origin, dateParam = '') {
   @media print {
     .collected-line { background: transparent; padding: 4px 0; border-top: 1px solid #000; margin-top: 10px; }
     tr { cursor: auto; }
+    /* Mark column is for in-app tracking, not useful on paper */
+    th.col-mark, td.mark { display: none; }
   }
   .empty { color: #888; font-style: italic; }
   .toggle { display: flex; gap: 6px; margin-bottom: 14px; align-items: center; flex-wrap: nowrap; overflow-x: hidden; }
@@ -1900,15 +1902,22 @@ function openBookingModal(idx) {
     return d % 1 === 0 ? String(d) : d.toFixed(2);
   };
   // Prefill Mark tab
-  const defaultStatus = m.status || 'done';
-  const defaultMethod = m.payment_method || 'cash';
-  highlightBtnGroup('bm-status', defaultStatus);
-  highlightBtnGroup('bm-method', defaultMethod);
+  // Only pre-select buttons when this booking already has a mark. Opening
+  // a fresh (unmarked) booking leaves Status/Payment unselected so saving
+  // without touching them (e.g. after editing only Details) won't
+  // accidentally create a 'done' mark.
+  if (m.status) {
+    highlightBtnGroup('bm-status', m.status);
+    highlightBtnGroup('bm-method', m.payment_method || 'cash');
+  } else {
+    highlightBtnGroup('bm-status', null);
+    highlightBtnGroup('bm-method', null);
+  }
   const amt = m.actual_amount != null ? fmt(m.actual_amount) : (b.quoted_cents ? fmt(b.quoted_cents) : '');
   document.getElementById('bm-amount').value = amt;
   document.getElementById('bm-cash-portion').value = m.cash_portion != null ? fmt(m.cash_portion) : '';
   document.getElementById('bm-payid-portion').value = m.payid_portion != null ? fmt(m.payid_portion) : '';
-  togglePaymentFields(defaultMethod);
+  togglePaymentFields(m.payment_method || 'cash');
   document.getElementById('bm-clear').style.display = m.status ? '' : 'none';
 
   // Prefill Details tab
@@ -2007,10 +2016,17 @@ async function saveBookingModal() {
       Object.assign(b, detailsBody);
       updateRowCells(currentIdx);
     }
-    // 2) Save Mark tab (always; it's the primary intent)
+    // 2) Save Mark tab only if user actually selected a status (either now
+    // or previously). Opening the modal to edit only Details should not
+    // create a stray 'done' mark.
+    const status = getSelectedInGroup('bm-status');
+    if (!status) {
+      closeBookingModal();
+      return;
+    }
     const method = getSelectedInGroup('bm-method');
     const markBody = {
-      status: getSelectedInGroup('bm-status'),
+      status,
       payment_method: method,
       phone: b.phone || '',
       psid: b.psid || '',
