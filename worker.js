@@ -1909,7 +1909,6 @@ function openBookingModal(idx) {
   document.getElementById('bm-cash-portion').value = m.cash_portion != null ? fmt(m.cash_portion) : '';
   document.getElementById('bm-payid-portion').value = m.payid_portion != null ? fmt(m.payid_portion) : '';
   togglePaymentFields(defaultMethod);
-  document.getElementById('bm-our-notes').value = m.our_notes || '';
   document.getElementById('bm-clear').style.display = m.status ? '' : 'none';
 
   // Prefill Details tab
@@ -1919,7 +1918,9 @@ function openBookingModal(idx) {
   document.getElementById('bm-address').value = b.address || '';
   document.getElementById('bm-name').value = b.name || '';
   document.getElementById('bm-mobile').value = b.mobile || '';
+  // Event notes shown on both tabs; same value
   document.getElementById('bm-event-notes').value = b.notes || '';
+  document.getElementById('bm-event-notes-mark').value = b.notes || '';
 
   document.getElementById('bm-status-msg').textContent = '';
   document.getElementById('booking-modal').classList.add('open');
@@ -1972,6 +1973,15 @@ function getSelectedInGroup(groupId) {
   return sel ? sel.dataset.value : null;
 }
 
+// The notes textarea is shown on both tabs; keep them in sync so editing
+// either one commits to the single Calendar description notes line.
+function syncNotes(source) {
+  const markEl = document.getElementById('bm-event-notes-mark');
+  const detailsEl = document.getElementById('bm-event-notes');
+  if (source === 'mark') detailsEl.value = markEl.value;
+  else markEl.value = detailsEl.value;
+}
+
 async function saveBookingModal() {
   if (currentIdx < 0) return;
   const b = window.BOOKINGS[currentIdx];
@@ -2002,7 +2012,6 @@ async function saveBookingModal() {
     const markBody = {
       status: getSelectedInGroup('bm-status'),
       payment_method: method,
-      our_notes: document.getElementById('bm-our-notes').value,
       phone: b.phone || '',
       psid: b.psid || '',
       customer_name: b.name || '',
@@ -2023,7 +2032,7 @@ async function saveBookingModal() {
     const payidCents = method === 'mixed' ? (toCents(markBody.payid_portion) || 0) : null;
     const amtCents = method === 'mixed' ? (cashCents + payidCents) : toCents(markBody.actual_amount);
     window.META[b.uid] = { ...window.META[b.uid], status: markBody.status, payment_method: method,
-      actual_amount: amtCents, cash_portion: cashCents, payid_portion: payidCents, our_notes: markBody.our_notes };
+      actual_amount: amtCents, cash_portion: cashCents, payid_portion: payidCents };
     renderBadge(currentIdx);
     renderCollectedLine();
     closeBookingModal();
@@ -2122,8 +2131,8 @@ ${equipmentBanner}${empty}${tableHtml}
         <div id="bm-mixed-total" style="font-size:0.85em;color:#666;margin-top:4px;"></div>
       </div>
       <div class="bm-group">
-        <label>Our notes (private)</label>
-        <textarea id="bm-our-notes" placeholder="e.g. 车坏得没法修 only did inspection"></textarea>
+        <label>Notes (goes to Calendar description)</label>
+        <textarea id="bm-event-notes-mark" placeholder="e.g. took $50 deposit, need to order O-rings" oninput="syncNotes('mark')"></textarea>
       </div>
     </div>
 
@@ -2138,7 +2147,7 @@ ${equipmentBanner}${empty}${tableHtml}
         <div><label>Customer</label><input id="bm-name"></div>
         <div><label>Mobile</label><input id="bm-mobile"></div>
       </div>
-      <div class="bm-group"><label>Event notes (in Calendar description)</label><textarea id="bm-event-notes"></textarea></div>
+      <div class="bm-group"><label>Notes (goes to Calendar description)</label><textarea id="bm-event-notes" oninput="syncNotes('details')"></textarea></div>
     </div>
 
     <div class="bm-actions">
