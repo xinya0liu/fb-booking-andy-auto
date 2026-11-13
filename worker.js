@@ -1587,11 +1587,14 @@ async function printPage(env, origin, dateParam = '') {
     const gasSug = await suggestGasFor(env, {
       make: e.veh_make, model: e.veh_model, year: e.veh_year, variant: e.veh_variant,
     });
+    const serviceCell = descNotes
+      ? `${service}<div class="svc-notes">📝 ${descNotes}</div>`
+      : service;
     return `<tr data-idx="${i}" onclick="openBookingModal(${i})">
       <td class="n">${i + 1}</td>
       <td class="src"><span class="${srcClass}">${srcLabel}</span></td>
       <td class="time">${clock}</td>
-      <td class="svc">${service}</td>
+      <td class="svc">${serviceCell}</td>
       <td class="price">${price}</td>
       <td class="veh">${vehicle}</td>
       <td class="gas">${gasSug}</td>
@@ -1658,6 +1661,7 @@ async function printPage(env, origin, dateParam = '') {
   .badge-fb { background: #fff; color: #111; border: 1px solid #111; padding: 0 4px; }
   td.time { white-space: nowrap; font-weight: bold; font-size: 1.05em; }
   td.svc { max-width: 210px; word-break: break-word; }
+  td.svc .svc-notes { font-size: 0.82em; color: #666; font-style: italic; margin-top: 3px; line-height: 1.25; }
   td.price { white-space: nowrap; }
   td.veh  { max-width: 170px; word-break: break-word; }
   td.addr { max-width: 260px; word-break: break-word; line-height: 1.3; }
@@ -2047,7 +2051,9 @@ function updateRowCells(idx) {
   if (!row) return;
   const cells = row.querySelectorAll('td');
   // Order: n(0) src(1) time(2) svc(3) price(4) veh(5) gas(6) addr(7) who(8) mark(9)
-  cells[3].textContent = b.service || '';
+  const svc = esc(b.service || '');
+  const n = (b.notes || '').trim();
+  cells[3].innerHTML = n ? \`\${svc}<div class="svc-notes">📝 \${esc(n)}</div>\` : svc;
   cells[4].textContent = b.price || '';
   cells[5].textContent = b.vehicle || '';
 }
