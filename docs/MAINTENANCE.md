@@ -238,6 +238,38 @@ launchctl load ~/Library/LaunchAgents/com.andyauto.imessage.plist
 - 看日志有没有 `Received SIGTERM` → launchd 在杀进程，检查 plist 有没有 `ThrottleInterval 10`
 - 看日志有没有 `Already running` → 有残留进程，运行 `pkill -f server.py` 再重启服务
 
+### PyObjC 装在"对的"Python 上
+
+server.py 用 `from Foundation import NSUnarchiver` 正确解码 iOS 带超链接的 SMS 消息。`Foundation` 来自 PyObjC，必须装在 launchd 实际运行的 Python 上，不是随便哪个 python3。
+
+**先确认 launchd 用的是哪个 Python**：
+```bash
+ps aux | grep server.py | grep -v grep
+```
+看命令行开头的解释器路径。常见两个：
+- `/Library/Developer/CommandLineTools/.../Python3.framework/Versions/3.9/.../Python` — CommandLineTools Python 3.9
+- `/usr/local/bin/python3` 或 `/opt/homebrew/bin/python3` — Homebrew Python 3.11/3.12
+
+**装 PyObjC 到对应 Python**：
+```bash
+# Python 3.9（CommandLineTools）：10.x 是最后一个有预编译 wheel 的稳定版
+/Library/Developer/CommandLineTools/usr/bin/python3 -m pip install --user 'pyobjc-core==10.3.1' 'pyobjc-framework-Cocoa==10.3.1'
+
+# Python 3.11+（Homebrew）：用最新版
+/usr/local/bin/python3 -m pip install --user --break-system-packages pyobjc-framework-Cocoa
+```
+
+**验证装好**：
+```bash
+<python路径> -c "from Foundation import NSData, NSUnarchiver; print('ok')"
+```
+
+**症状识别**：如果日志出现大量
+```
+ROWID NNN from +61xxx: decoded from attributedBody but no keyword. Text: 'xxx xdatetime'
+```
+且被截断成 link 元数据碎片，就是 NSUnarchiver 没生效，fallback 到 heuristic 了。
+
 ## 可能需要维护的情况
 
 不会定期发生，遇到时处理：

@@ -195,6 +195,7 @@ Andy 每单做完后想标记 3 个维度：
 **SMS 触发稳定性（server.py）**
 - [x] macOS Sonoma 的 attributedBody 解码：NSUnarchiver（PyObjC）正确读取纯 SMS 的消息文本
 - [x] Heuristic fallback（PyObjC 不可用时）：过滤 plist 元数据（`$version`/`$archiver`/`kIM*`），返回最长的候选字符串
+- [x] **PyObjC 装在"对的"Python 上**（2026-11-13）：之前装在 Homebrew Python 3.11，但 launchd 实际跑 CommandLineTools Python 3.9。NSUnarchiver 没生效，heuristic 对 iOS 自动加超链接的消息（日期/价格）只能抓到 link 元数据碎片。装 `pyobjc 10.3.1`（Python 3.9 最后一个有预编译 wheel 的版本）到 3.9 后端到端验证通过。详细见 [`docs/MAINTENANCE.md`](docs/MAINTENANCE.md#pyobjc-装在对的-python-上)
 - [x] `clean_contact_name` 重写：剥离任意组合的日期/星期/时间前缀（如 `18/10 Sunday 3pm Bob` → `Bob`，`18/10 Sun` → ``）
 - [x] `scan_keywords` SQL 加 LEFT JOIN + `chat_identifier` fallback，SMS 对话缺少 `chat_handle_join` 时也能查到
 - [x] decode 失败时打日志（原本静默跳过，无法定位问题）

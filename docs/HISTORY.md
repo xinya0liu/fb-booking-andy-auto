@@ -166,6 +166,7 @@ AI 的 prompt 已经告诉它"不要带 QLD/Australia/邮编"，但模型偶尔�
 | 2026-11-中旬 | 冷媒单价 KV + 实时 Cost 列（价格变动一键生效，不用批量 UPDATE）；R1234yf 从 UI 移除（Andy 目前不做这项服务） |
 | 2026-11-中旬 | 车型搜索增强：自动识别年份 `camry 2013` → text + year；按 token 拆分支持 `cx-5` 匹配 `CX5`；开放式年份显示 `2007+` |
 | 2026-11-13 | 建立"文档同步要求"规则：README/USER_GUIDE/SETUP/MAINTENANCE/TODO/HISTORY 需要和大改动一起更新；小修不用 |
+| 2026-11-13 | 定位 SMS 不触发的最后一个坑：launchd 跑的是 CommandLineTools Python 3.9，之前 PyObjC 装在 Homebrew Python 3.11。装了 `pyobjc 10.3.1`（Python 3.9 最后一个有预编译 wheel 的稳定版）到 3.9 后，NSUnarchiver 能正确解码 iOS 自动给日期/价格加超链接的消息（之前 heuristic 只能抓到 link 元数据碎片 `'sunday 15/11 ... xdatetime'`） |
 
 ## 未来可以考虑的方向
 
