@@ -1581,6 +1581,7 @@ async function printPage(env, origin, dateParam = '') {
       address: e.location || '',
       mobile, notes: descNotes,
       quoted_cents: priceNum > 0 ? priceNum * 100 : 0,
+      time: clock,
     });
     // Suggested gas from vehicles DB (only when AI tagged structured fields)
     const gasSug = await suggestGasFor(env, {
@@ -1885,18 +1886,24 @@ function openBookingModal(idx) {
   currentIdx = idx;
   const b = window.BOOKINGS[idx];
   const m = window.META[b.uid] || {};
-  document.getElementById('bm-title').textContent = (b.name || b.phone || 'Booking') + ' · ' + (b.service || '');
+  const titleBits = [b.time, b.price].filter(Boolean);
+  document.getElementById('bm-title').textContent = titleBits.length ? titleBits.join(' · ') : 'Booking';
   switchTab('mark');
 
+  // Drop trailing '.00' so whole-dollar defaults show as '155' not '155.00'
+  const fmt = cents => {
+    const d = cents / 100;
+    return d % 1 === 0 ? String(d) : d.toFixed(2);
+  };
   // Prefill Mark tab
   const defaultStatus = m.status || 'done';
   const defaultMethod = m.payment_method || 'cash';
   highlightBtnGroup('bm-status', defaultStatus);
   highlightBtnGroup('bm-method', defaultMethod);
-  const amt = m.actual_amount != null ? (m.actual_amount / 100).toFixed(2) : (b.quoted_cents ? (b.quoted_cents / 100).toFixed(2) : '');
+  const amt = m.actual_amount != null ? fmt(m.actual_amount) : (b.quoted_cents ? fmt(b.quoted_cents) : '');
   document.getElementById('bm-amount').value = amt;
-  document.getElementById('bm-cash-portion').value = m.cash_portion != null ? (m.cash_portion / 100).toFixed(2) : '';
-  document.getElementById('bm-payid-portion').value = m.payid_portion != null ? (m.payid_portion / 100).toFixed(2) : '';
+  document.getElementById('bm-cash-portion').value = m.cash_portion != null ? fmt(m.cash_portion) : '';
+  document.getElementById('bm-payid-portion').value = m.payid_portion != null ? fmt(m.payid_portion) : '';
   togglePaymentFields(defaultMethod);
   document.getElementById('bm-our-notes').value = m.our_notes || '';
   document.getElementById('bm-clear').style.display = m.status ? '' : 'none';
