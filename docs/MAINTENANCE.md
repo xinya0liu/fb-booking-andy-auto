@@ -119,6 +119,9 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
 | `/vehicles/api?secret=…[&q=…&year=…&id=…]` | GET/POST/PUT/DELETE | 车型 CRUD + 搜索 API |
 | `/vehicle-lookup?secret=…&make=…&model=…&year=…&variant=…` | GET | 精确查询（为自动报价系统预留） |
 | `/refrigerant-prices?secret=…` | GET/POST | 冷媒单价 KV 读写（`$/kg`） |
+| `/bookings/meta?secret=…[&uid=…]` | GET/POST/DELETE | 工单标记（status/pay/actual）；无 uid 返回全部 meta |
+| `/bookings/edit?secret=…&uid=…` | POST | 编辑 Calendar 事件字段 |
+| `/report?secret=…[&month=…&period=…&format=csv]` | GET | 月年收入报表 + CSV 导出 |
 | `/c?psid=…` | GET | 客人卡片 |
 | `/go?…` | GET | 旧链接中转 |
 | `/test-bark?token=…` | GET | 手动触发明日提醒 |
@@ -186,6 +189,14 @@ npx wrangler d1 execute andy-auto-db --remote --command "SELECT sql FROM sqlite_
 # 看总数 + 按品牌分组
 npx wrangler d1 execute andy-auto-db --remote --command "SELECT COUNT(*) FROM vehicles;"
 npx wrangler d1 execute andy-auto-db --remote --command "SELECT make, COUNT(*) FROM vehicles GROUP BY make ORDER BY 2 DESC LIMIT 10;"
+
+# Phase 1 CRM 表：工单标记 + 客户
+npx wrangler d1 execute andy-auto-db --remote --command "SELECT COUNT(*) FROM bookings_meta;"
+npx wrangler d1 execute andy-auto-db --remote --command "SELECT status, COUNT(*), SUM(actual_amount) FROM bookings_meta GROUP BY status;"
+npx wrangler d1 execute andy-auto-db --remote --command "SELECT * FROM customers ORDER BY total_paid DESC LIMIT 10;"
+
+# 清掉某单的标记（Andy 标错了重做）
+npx wrangler d1 execute andy-auto-db --remote --command "DELETE FROM bookings_meta WHERE calendar_uid = '<uid>';"
 
 # 查某辆车
 npx wrangler d1 execute andy-auto-db --remote --command "SELECT * FROM vehicles WHERE make='Toyota' AND model LIKE 'Hilux%' ORDER BY year_start;"

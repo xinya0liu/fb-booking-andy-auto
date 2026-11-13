@@ -281,6 +281,75 @@ Feel free to rebook anytime!
 - `/usr/bin/python3` 有 Full Disk Access（launchd 进程读 chat.db）
 - Terminal 有 Automation → Messages 权限（发 iMessage）
 
+## 打印页标记工单（Phase 1 CRM）
+
+打开 `/print?secret=…` 后，**每一行都可以点**。弹出的 modal 有两个 tab：
+
+### 💵 Status / Pay（标工单）
+
+每做完一单 → 点那行 → 弹窗 → 选：
+- **Status**：✓ Done（默认）/ ◐ Partial（只做了检查）/ ✗ No-show / — Cancel
+- **Payment**：Cash / PayID / Mixed / Unpaid
+- **Actual amount ($)**：默认是原报价，可改（例如只收检查费 $50）
+- **Our notes**：私人备注（例如"客人车坏得没法修"）
+
+默认值预填到位，最少**点 2 下 → Save**就完成一单。
+
+Save 后行末 Mark 列会出现 badge：`✓ $155 Cash` / `◐ $50 Partial` / `✗ No-show`。
+
+**撤销**：点 modal 左下 "Clear markings"。
+
+### 📝 Details（改预约字段）
+
+同一个 modal 第二个 tab。可改：
+- Service / Price / Vehicle / Address / Customer / Mobile / Event notes
+
+写入 iCloud Calendar 事件本身，所有设备同步。**不改时间/日期**（改时间请在 Calendar app 里改，或发 `Booking updated`）。**不通知客户**。
+
+### 页面上的汇总
+
+屏幕顶部 h2：`9 bookings · Quoted $1,410`（报价合计）
+
+表格下方的 Collected 行（**打印时也会印出来**）：
+```
+Collected $1,245 · Cash $800 · PayID $445 · Unpaid $200 (1)
+```
+
+### 💧 Gas 列
+
+每行显示建议冷媒克数（从车型数据库查出来）：
+- **500g** — DB 里一个精确匹配
+- **500g or 580g** — 多个候选（variant 不明时）
+- **(空)** — DB 里没这车，或者这是老预约没有结构化 vehicle 字段
+
+数据源：AI 新建预约时 prompt 会提取 `vehicle_make/model/year/variant` 存进 Calendar X-属性，打印页实时查 `vehicles` DB。
+
+## 月年收入报表（`/report`）
+
+打开 `https://<worker 网址>/report?secret=<VERIFY_TOKEN>`。
+
+默认显示本月。切换：
+- `Last 30 days` / `This month` / `YTD 2026`
+- 或 URL 带 `?month=2026-11` 看指定月
+
+### 看什么
+
+```
+Collected  $11,245
+Quoted     $12,100  (gap $855)   ← 差额是漏收/no-show
+💵 Cash $5,400 · 📱 PayID $5,445 · ⚠ Unpaid $400 (3)
+
+Done 52 · Partial 4 · No-show 2 · Cancelled 1
+```
+
+下面是**每日明细表**（最多显示 62 天），每天几单、Collected、Cash、PayID、Unpaid 分别多少。
+
+### 导出 CSV
+
+点右上角 `⬇ CSV` → 下载 CSV 文件，列：`date, count, collected_cents, cash_cents, payid_cents, unpaid_cents`，直接发给会计。
+
+---
+
 ## 车型冷媒数据库（`/vehicles`）
 
 打开 `https://<worker 网址>/vehicles?secret=<VERIFY_TOKEN>`。

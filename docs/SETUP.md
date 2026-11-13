@@ -80,6 +80,14 @@ npx wrangler d1 execute andy-auto-db --remote --file=/tmp/import.sql
 
 导入成功后浏览器打开 `/vehicles?secret=<VERIFY_TOKEN>` 应该能看到搜索框 + 1979 条数据。
 
+### Phase 1 CRM 表（2026-11 加的）
+
+`schema.sql` 同时会建 `customers` 和 `bookings_meta` 表（用于打印页的工单标记 + 月年收入报表）：
+- `customers`：按 phone 或 psid 索引的客户档案，visit_count/total_paid 自动累积
+- `bookings_meta`：每单的 status/payment_method/actual_amount，calendar_uid 作主键
+
+这两张表第一次 `wrangler d1 execute --file=schema.sql` 就会建好，不用额外命令。
+
 ### 变量（Settings → Variables and Secrets）
 
 **必填**

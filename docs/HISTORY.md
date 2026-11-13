@@ -167,6 +167,7 @@ AI 的 prompt 已经告诉它"不要带 QLD/Australia/邮编"，但模型偶尔�
 | 2026-11-中旬 | 车型搜索增强：自动识别年份 `camry 2013` → text + year；按 token 拆分支持 `cx-5` 匹配 `CX5`；开放式年份显示 `2007+` |
 | 2026-11-13 | 建立"文档同步要求"规则：README/USER_GUIDE/SETUP/MAINTENANCE/TODO/HISTORY 需要和大改动一起更新；小修不用 |
 | 2026-11-13 | 定位 SMS 不触发的最后一个坑：launchd 跑的是 CommandLineTools Python 3.9，之前 PyObjC 装在 Homebrew Python 3.11。装了 `pyobjc 10.3.1`（Python 3.9 最后一个有预编译 wheel 的稳定版）到 3.9 后，NSUnarchiver 能正确解码 iOS 自动给日期/价格加超链接的消息（之前 heuristic 只能抓到 link 元数据碎片 `'sunday 15/11 ... xdatetime'`） |
+| 2026-11-13 | Phase 1 CRM 一次性发布：D1 新增 `customers` + `bookings_meta`；打印页加点击行弹 modal（Status/Payment/Actual Amount + Service/Price/Vehicle/Address 等 Calendar 字段编辑），统一入口两个 tab；行末 Mark 列显示工单 badge，表下 Collected/Cash/PayID/Unpaid 汇总；Gas 列从 vehicles DB 查建议克数（AI prompt 加 `vehicle_make/model/year/variant` 结构化字段 → X-VEH-* 属性）；新增 `/report` 月年收入报表 + CSV 导出 |
 
 ## 未来可以考虑的方向
 

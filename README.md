@@ -103,8 +103,11 @@ Mac 的 server.py 用 AppleScript 自动发 iMessage 给客人
 | 路径 | 用途 |
 |---|---|
 | `/check?token=…` | 系统健康检查（iCloud 登录、日历存在） |
-| `/print?secret=…[&date=today|tomorrow|YYYY-MM-DD]` | 当日/明日/指定日期的预约打印页（含每日 📝 Notes、紧凑布局、10+ 单自动换页） |
+| `/print?secret=…[&date=today|tomorrow|YYYY-MM-DD]` | 当日/明日/指定日期的预约打印页（点行弹 modal、每日 📝 Notes、紧凑布局、10+ 单自动换页、Gas 列显示 vehicles DB 建议用量、Mark 列显示工单标记 badge、已标记行汇总 Collected/Cash/PayID/Unpaid） |
 | `/notes?secret=…&date=…` | 每日备注 KV 读写（打印页用） |
+| `/bookings/meta?secret=…[&uid=…]` | 工单标记 D1 读写（status/payment/actual_amount）；GET 不带 uid 返回全部 |
+| `/bookings/edit?secret=…&uid=…` | 直接编辑 Calendar 事件字段（service/price/vehicle/address/customer/mobile/notes） |
+| `/report?secret=…[&month=YYYY-MM|&period=ytd|30d][&format=csv]` | 月/年收入报表：Collected、Cash/PayID/Unpaid、每日明细；带 `format=csv` 下载给会计 |
 | `/vehicles?secret=…` | 车型冷媒数据库管理页（1979 条车型 + 实时成本计算） |
 | `/vehicles/api?secret=…` | CRUD API（GET list/search、POST、PUT、DELETE） |
 | `/vehicle-lookup?secret=…&make=…&model=…&year=…` | 车型精确查询 API（给未来自动报价系统用） |

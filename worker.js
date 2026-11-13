@@ -138,6 +138,19 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return refrigerantPricesHandler(req, env);
     }
+    // CRM：每单工单标记（状态/支付/实收）+ Calendar 事件字段编辑
+    if (url.pathname === '/bookings/meta' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return bookingsMetaHandler(req, url, env);
+    }
+    if (url.pathname === '/bookings/edit' && req.method === 'POST' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return bookingEditHandler(req, url, env);
+    }
+    if (url.pathname === '/report' && req.method === 'GET' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return reportPage(req, url, env);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -574,7 +587,9 @@ async function saveSmsFromAi(ai, env, cfg, phone = '') {
     location: ai.address,
     description: notes.join('\n'),
     url: link,
-    x: { psid: '', name, service: ai.service, price: ai.price },
+    x: { psid: '', name, service: ai.service, price: ai.price,
+         'X-VEH-MAKE': ai.vehicle_make || '', 'X-VEH-MODEL': ai.vehicle_model || '',
+         'X-VEH-YEAR': ai.vehicle_year || '', 'X-VEH-VARIANT': ai.vehicle_variant || '' },
   });
 
   const cal = await calendarUrl(env);
@@ -647,9 +662,13 @@ Rules:
         address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. Preserve unit/flat numbers exactly as written (e.g. "2/32a Smith St" must stay as "2/32a Smith St", not "2 Smith St"). Do not include postcode, state (QLD) or country (Australia). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number. Leave \"\" if not mentioned."),
         vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        vehicle_make: str('Just the make, e.g. "Toyota", "Mazda", "Hyundai". Leave "" if the make isn\'t clear.'),
+        vehicle_model: str('Just the model, e.g. "Camry", "Hilux", "CX-5". Leave "" if the model isn\'t clear.'),
+        vehicle_year: str('4-digit year, e.g. "2016". Leave "" if the year isn\'t clear.'),
+        vehicle_variant: str('Engine/trim distinguisher only when a customer specifically said so, e.g. "Hybrid", "Petrol", "Diesel", "2.5L". Leave "" otherwise.'),
         notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
       },
-      required: ['name', 'date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'notes'],
+      required: ['name', 'date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_variant', 'notes'],
     },
   };
 
@@ -734,9 +753,13 @@ ${conversationText}`;
         address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. Preserve unit/flat numbers exactly as written (e.g. "2/32a Smith St" must stay as "2/32a Smith St", not "2 Smith St"). Do not include postcode, state (QLD) or country (Australia). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number. Leave \"\" if not mentioned."),
         vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
+        vehicle_make: str('Just the make, e.g. "Toyota", "Mazda", "Hyundai". Leave "" if the make isn\'t clear.'),
+        vehicle_model: str('Just the model, e.g. "Camry", "Hilux", "CX-5". Leave "" if the model isn\'t clear.'),
+        vehicle_year: str('4-digit year, e.g. "2016". Leave "" if the year isn\'t clear.'),
+        vehicle_variant: str('Engine/trim distinguisher only when a customer specifically said so, e.g. "Hybrid", "Petrol", "Diesel", "2.5L". Leave "" otherwise.'),
         notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
       },
-      required: ['name', 'date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'notes'],
+      required: ['name', 'date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_variant', 'notes'],
     },
   };
 
@@ -777,7 +800,7 @@ ${conversationText}`;
 }
 
 // 写入新预约。已经有同一时间的预约、或 Meta 重复推送时返回 false
-async function saveNewBooking({ env, cfg, psid, mid, name, link }, { t, service, price, address, notes }) {
+async function saveNewBooking({ env, cfg, psid, mid, name, link }, { t, service, price, address, notes, veh_make, veh_model, veh_year, veh_variant }) {
   const id = (await sha256hex(mid)).slice(0, 32);
   const uid = `${id}-${psid}@fb-booking`; // 客人编号藏在事件的 UID 里，备注里不用写
 
@@ -800,7 +823,9 @@ async function saveNewBooking({ env, cfg, psid, mid, name, link }, { t, service,
     location: address,
     description: notes.join('\n'),
     url: link,
-    x: { psid, name, service, price },
+    x: { psid, name, service, price,
+         'X-VEH-MAKE': veh_make || '', 'X-VEH-MODEL': veh_model || '',
+         'X-VEH-YEAR': veh_year || '', 'X-VEH-VARIANT': veh_variant || '' },
   });
 
   const cal = await calendarUrl(env);
@@ -875,7 +900,8 @@ async function doConfirmFromChat(ctx, f) {
     if (!CHAT_FIELDS.some(([, label]) => label.toLowerCase() === fieldLabel(l).toLowerCase())) notes.push(l);
   }
 
-  const created = await saveNewBooking(ctx, { t, service: d.service, price: d.price, address: d.address, notes });
+  const created = await saveNewBooking(ctx, { t, service: d.service, price: d.price, address: d.address, notes,
+    veh_make: d.vehicle_make, veh_model: d.vehicle_model, veh_year: d.vehicle_year, veh_variant: d.vehicle_variant });
   if (!created) return;
 
   applyCustomLabel(psid, d.service, w.date, env);
@@ -1506,18 +1532,13 @@ async function printPage(env, origin, dateParam = '') {
 
   const services = [];
   const priceTotals = [];
-  const rows = bookings.map((e, i) => {
+  const bookingData = [];  // mirror of row data for JS modal
+  const rows = (await Promise.all(bookings.map(async (e, i) => {
     const p = localParts(e.startMs, cfg.tz);
     const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
     const desc = e.description || '';
     const isSms = !e.psid;
-    // Always parse summary so manual Calendar title edits (e.g. price change) take precedence
     const summaryParsed = parseSummaryFields(e.summary || '');
-    // Prefer the Calendar title (summary) because Andy often extends the
-    // service description there after the booking is created ("Regas" →
-    // "Change O-ring, replace valves and regas"). Fall back to the
-    // description's Service line (original AI extraction) if the summary
-    // parse yields nothing.
     const descService = desc.match(/^Service:\s*(.+)$/im)?.[1]?.trim() || '';
     let service = summaryParsed.service || descService || e.service || '';
     let price = summaryParsed.price || e.price || '';
@@ -1526,15 +1547,13 @@ async function printPage(env, origin, dateParam = '') {
     const priceNum = parseInt(String(price).replace(/[^\d]/g, ''), 10);
     if (priceNum > 0) priceTotals.push(priceNum);
     const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
+    const descNotes = desc.match(/^Notes:\s*(.+)$/im)?.[1]?.trim() || '';
     const srcClass = isSms ? 'badge-sms' : 'badge-fb';
     const srcLabel = isSms ? 'SMS' : 'FB';
     const addr = splitAddress(e.location || '');
     const addrHtml = addr.suburb
       ? `<span class="addr-street">${addr.street}</span><span class="addr-suburb">${addr.suburb}</span>`
       : `<span class="addr-street">${addr.street}</span>`;
-    // Customer: dedupe when the name is actually the phone number (common
-    // when the customer never shared a real name). Also treat email-only
-    // "names" as a secondary line like mobile.
     let name = (e.name || '').trim();
     const digits = s => (s || '').replace(/[^\d]/g, '');
     const nameIsPhone = name && digits(name) && digits(name) === digits(mobile);
@@ -1553,17 +1572,33 @@ async function printPage(env, origin, dateParam = '') {
     } else {
       whoHtml = '';
     }
-    return `<tr>
+    bookingData.push({
+      uid: e.uid || '',
+      psid: e.psid || '',
+      phone: mobile || '',
+      name: nameIsPhone || nameIsEmail ? '' : name,
+      service, price, vehicle,
+      address: e.location || '',
+      mobile, notes: descNotes,
+      quoted_cents: priceNum > 0 ? priceNum * 100 : 0,
+    });
+    // Suggested gas from vehicles DB (only when AI tagged structured fields)
+    const gasSug = await suggestGasFor(env, {
+      make: e.veh_make, model: e.veh_model, year: e.veh_year, variant: e.veh_variant,
+    });
+    return `<tr data-idx="${i}" onclick="openBookingModal(${i})">
       <td class="n">${i + 1}</td>
       <td class="src"><span class="${srcClass}">${srcLabel}</span></td>
       <td class="time">${clock}</td>
       <td class="svc">${service}</td>
       <td class="price">${price}</td>
       <td class="veh">${vehicle}</td>
+      <td class="gas">${gasSug}</td>
       <td class="addr">${addr.street || addr.suburb ? addrHtml : ''}</td>
       <td class="who">${whoHtml}</td>
+      <td class="mark" id="mark-${i}"></td>
     </tr>`;
-  }).join('');
+  }))).join('');
 
   const needsFullKit = services.some(s => /pressure/i.test(s));
   const equipmentBanner = needsFullKit
@@ -1572,19 +1607,23 @@ async function printPage(env, origin, dateParam = '') {
   const empty = bookings.length === 0
     ? `<p class="empty">No bookings for ${isToday ? 'today' : isTomorrow ? 'tomorrow' : dateStr}.</p>` : '';
 
-  const totalPrice = priceTotals.reduce((a, b) => a + b, 0);
+  const quotedTotal = priceTotals.reduce((a, b) => a + b, 0);
+  // Collected / Cash / PayID / Unpaid totals come from client-side JS once
+  // bookings_meta is loaded. Here we only render a placeholder.
   const summaryBits = [`${bookings.length} booking${bookings.length !== 1 ? 's' : ''}`];
-  if (totalPrice > 0) summaryBits.push(`$${totalPrice.toLocaleString()} total`);
+  if (quotedTotal > 0) summaryBits.push(`Quoted $${quotedTotal.toLocaleString()}`);
   const summaryLine = summaryBits.join(' · ');
 
   const tableHtml = bookings.length === 0 ? '' : `
   <table>
     <thead><tr>
       <th class="col-n">#</th><th class="col-src">Src</th><th class="col-time">Time</th>
-      <th>Service</th><th>Price</th><th>Vehicle</th><th>Address</th><th>Customer</th>
+      <th>Service</th><th>Price</th><th>Vehicle</th><th class="col-gas">Gas</th><th>Address</th><th>Customer</th>
+      <th class="col-mark">Mark</th>
     </tr></thead>
     <tbody>${rows}</tbody>
-  </table>`;
+  </table>
+  <div class="collected-line" id="collected-line"></div>`;
 
   // Load any daily notes Andy has written for this date (persisted in KV).
   const noteKey = `note:${targetIso}`;
@@ -1627,6 +1666,26 @@ async function printPage(env, origin, dateParam = '') {
   td.who .who-name { display: block; font-weight: bold; }
   td.who .who-mobile { display: block; color: #555; font-size: 0.9em; }
   td.who .who-mobile-only { display: block; color: #111; }
+  /* Mark column (post-service status badge) */
+  th.col-mark { width: 100px; }
+  th.col-gas { width: 70px; }
+  td.gas { white-space: nowrap; color: #060; font-size: 0.9em; }
+  td.mark { white-space: nowrap; font-size: 0.85em; text-align: right; }
+  td.mark .badge-done   { display: inline-block; padding: 2px 6px; border-radius: 3px; background: #efe; color: #060; border: 1px solid #9c9; font-weight: bold; }
+  td.mark .badge-partial{ display: inline-block; padding: 2px 6px; border-radius: 3px; background: #fef3dc; color: #7a4a00; border: 1px solid #e0a040; font-weight: bold; }
+  td.mark .badge-noshow { display: inline-block; padding: 2px 6px; border-radius: 3px; background: #fee; color: #a00; border: 1px solid #f99; font-weight: bold; }
+  td.mark .badge-cancel { display: inline-block; padding: 2px 6px; border-radius: 3px; background: #eee; color: #666; border: 1px solid #ccc; font-weight: bold; }
+  td.mark .pay-cash  { color: #060; font-weight: normal; }
+  td.mark .pay-payid { color: #025; font-weight: normal; }
+  td.mark .pay-unpaid { color: #a00; font-weight: bold; }
+  tr { cursor: pointer; }
+  tr:hover { background: #f8f8f8 !important; }
+  .collected-line { margin-top: 10px; padding: 8px 12px; background: #f5f5f5; border-radius: 6px; font-size: 0.9em; font-weight: bold; color: #333; }
+  .collected-line .pay-unpaid { color: #a00; }
+  @media print {
+    .collected-line { background: transparent; padding: 4px 0; border-top: 1px solid #000; margin-top: 10px; }
+    tr { cursor: auto; }
+  }
   .empty { color: #888; font-style: italic; }
   .toggle { display: flex; gap: 6px; margin-bottom: 14px; align-items: center; flex-wrap: nowrap; overflow-x: hidden; }
   .toggle a { padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 0.85em; border: 1px solid #bbb; color: #333; background: #f5f5f5; white-space: nowrap; }
@@ -1670,6 +1729,33 @@ async function printPage(env, origin, dateParam = '') {
   #print-modal-box .modal-btns button { padding:9px 22px; border-radius:8px; border:none; font-size:1em; cursor:pointer; }
   #print-modal-box .modal-btns .btn-print { background:#2a7a2a; color:#fff; }
   #print-modal-box .modal-btns .btn-cancel { background:#eee; color:#333; }
+  /* Booking edit/mark modal */
+  #booking-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:999; align-items:center; justify-content:center; }
+  #booking-modal.open { display:flex; }
+  #booking-modal-box { background:#fff; border-radius:12px; padding:18px 20px; width:92%; max-width: 480px; max-height: 92vh; overflow-y: auto; }
+  #booking-modal-box .bm-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  #booking-modal-box .bm-title { font-weight:bold; font-size:1em; flex:1; color:#111; }
+  #booking-modal-box .bm-close { border:none; background:none; font-size:1.3em; cursor:pointer; color:#888; padding:0 4px; }
+  #booking-modal-box .bm-tabs { display:flex; gap:4px; border-bottom:1px solid #ddd; margin-bottom:12px; }
+  #booking-modal-box .bm-tab { padding:8px 12px; cursor:pointer; border:none; background:none; font-size:0.9em; color:#666; border-bottom:2px solid transparent; }
+  #booking-modal-box .bm-tab.active { color:#111; border-bottom-color:#2a7a2a; font-weight:bold; }
+  #booking-modal-box .bm-panel { display:none; }
+  #booking-modal-box .bm-panel.active { display:block; }
+  #booking-modal-box .bm-group { margin-bottom: 14px; }
+  #booking-modal-box .bm-group label { display:block; font-size:0.78em; color:#666; margin-bottom:4px; }
+  #booking-modal-box .bm-group input, #booking-modal-box .bm-group textarea { width:100%; padding:7px 9px; border:1px solid #ccc; border-radius:5px; font-size:0.95em; font-family:inherit; box-sizing:border-box; }
+  #booking-modal-box .bm-group textarea { min-height: 50px; resize: vertical; }
+  #booking-modal-box .bm-row { display:flex; gap:8px; margin-bottom:14px; }
+  #booking-modal-box .bm-row > div { flex:1; }
+  #booking-modal-box .bm-group-btns { display:flex; gap:6px; flex-wrap:wrap; }
+  #booking-modal-box .bm-group-btns button { padding:8px 12px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; font-size:0.9em; flex:1; min-width: 70px; }
+  #booking-modal-box .bm-group-btns button.selected { background:#2a7a2a; color:#fff; border-color:#2a7a2a; font-weight:bold; }
+  #booking-modal-box .bm-actions { display:flex; gap:8px; justify-content:space-between; margin-top:16px; padding-top:14px; border-top:1px solid #eee; }
+  #booking-modal-box .bm-actions .btn-save { background:#2a7a2a; color:#fff; border:none; padding:10px 22px; border-radius:6px; font-size:0.95em; cursor:pointer; font-weight:bold; }
+  #booking-modal-box .bm-actions .btn-cancel { background:#eee; color:#333; border:none; padding:10px 18px; border-radius:6px; font-size:0.95em; cursor:pointer; }
+  #booking-modal-box .bm-actions .btn-clear { background:transparent; color:#a00; border:1px solid #f99; padding:10px 14px; border-radius:6px; font-size:0.85em; cursor:pointer; }
+  #booking-modal-box .bm-status { font-size:0.8em; color:#888; margin-left: 8px; }
+  @media print { #booking-modal { display: none !important; } }
   @media print {
     .toggle { display: none; }
     .print-btn { display: none; }
@@ -1729,6 +1815,198 @@ function onNotesInput(e) {
     }
   }, 600);
 }
+
+// ========== Booking modal: mark (status/pay/amount) + edit details ==========
+window.BOOKINGS = []; // injected per-page
+window.META = {};     // { uid → meta row }
+let currentIdx = -1;
+
+function esc(s) { return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtMoney(cents) { return '\$' + (cents/100).toFixed(2); }
+function paymentLabel(method) { return ({cash:'Cash', payid:'PayID', mixed:'Mixed', unpaid:'Unpaid'})[method] || ''; }
+
+async function loadMeta() {
+  try {
+    const r = await fetch(window.META_URL);
+    const data = await r.json();
+    window.META = data.meta || {};
+    renderAllBadges();
+    renderCollectedLine();
+  } catch (e) {
+    console.error('loadMeta failed', e);
+  }
+}
+
+function renderAllBadges() {
+  for (let i = 0; i < (window.BOOKINGS || []).length; i++) renderBadge(i);
+}
+
+function renderBadge(idx) {
+  const b = window.BOOKINGS[idx];
+  const cell = document.getElementById('mark-' + idx);
+  if (!cell) return;
+  const m = window.META[b.uid];
+  if (!m || !m.status) { cell.innerHTML = ''; return; }
+  const statusMap = { done: ['badge-done', '✓'], partial: ['badge-partial', '◐'], no_show: ['badge-noshow', '✗'], cancelled: ['badge-cancel', '—'] };
+  const [cls, icon] = statusMap[m.status] || ['badge-cancel', '?'];
+  const money = (m.actual_amount != null) ? fmtMoney(m.actual_amount) : '';
+  const method = m.payment_method ? \`<span class="pay-\${m.payment_method}">\${paymentLabel(m.payment_method)}</span>\` : '';
+  cell.innerHTML = \`<span class="\${cls}">\${icon} \${money}</span>\${method ? ' · ' + method : ''}\`;
+}
+
+function renderCollectedLine() {
+  const line = document.getElementById('collected-line');
+  if (!line || !window.BOOKINGS.length) { if (line) line.textContent = ''; return; }
+  let collected = 0, cash = 0, payid = 0, mixed = 0, unpaid = 0;
+  let unpaidCount = 0, markedCount = 0;
+  for (const b of window.BOOKINGS) {
+    const m = window.META[b.uid];
+    if (!m || !m.status) continue;
+    markedCount++;
+    const amt = m.actual_amount || 0;
+    if (m.status === 'done' || m.status === 'partial') collected += amt;
+    if (m.payment_method === 'cash') cash += amt;
+    else if (m.payment_method === 'payid') payid += amt;
+    else if (m.payment_method === 'mixed') mixed += amt;
+    else if (m.payment_method === 'unpaid') { unpaid += amt; unpaidCount++; }
+  }
+  if (!markedCount) { line.textContent = ''; return; }
+  const bits = [\`<strong>Collected \${fmtMoney(collected)}</strong>\`];
+  if (cash) bits.push(\`Cash \${fmtMoney(cash)}\`);
+  if (payid) bits.push(\`PayID \${fmtMoney(payid)}\`);
+  if (mixed) bits.push(\`Mixed \${fmtMoney(mixed)}\`);
+  if (unpaid) bits.push(\`<span class="pay-unpaid">Unpaid \${fmtMoney(unpaid)} (\${unpaidCount})</span>\`);
+  line.innerHTML = bits.join(' · ');
+}
+
+function openBookingModal(idx) {
+  currentIdx = idx;
+  const b = window.BOOKINGS[idx];
+  const m = window.META[b.uid] || {};
+  document.getElementById('bm-title').textContent = (b.name || b.phone || 'Booking') + ' · ' + (b.service || '');
+  switchTab('mark');
+
+  // Prefill Mark tab
+  const defaultStatus = m.status || 'done';
+  const defaultMethod = m.payment_method || 'cash';
+  highlightBtnGroup('bm-status', defaultStatus);
+  highlightBtnGroup('bm-method', defaultMethod);
+  const amt = m.actual_amount != null ? (m.actual_amount / 100).toFixed(2) : (b.quoted_cents ? (b.quoted_cents / 100).toFixed(2) : '');
+  document.getElementById('bm-amount').value = amt;
+  document.getElementById('bm-our-notes').value = m.our_notes || '';
+  document.getElementById('bm-clear').style.display = m.status ? '' : 'none';
+
+  // Prefill Details tab
+  document.getElementById('bm-service').value = b.service || '';
+  document.getElementById('bm-price').value = b.price || '';
+  document.getElementById('bm-vehicle').value = b.vehicle || '';
+  document.getElementById('bm-address').value = b.address || '';
+  document.getElementById('bm-name').value = b.name || '';
+  document.getElementById('bm-mobile').value = b.mobile || '';
+  document.getElementById('bm-event-notes').value = b.notes || '';
+
+  document.getElementById('bm-status-msg').textContent = '';
+  document.getElementById('booking-modal').classList.add('open');
+}
+
+function closeBookingModal() {
+  document.getElementById('booking-modal').classList.remove('open');
+  currentIdx = -1;
+}
+
+function switchTab(name) {
+  for (const t of document.querySelectorAll('#booking-modal .bm-tab')) t.classList.toggle('active', t.dataset.tab === name);
+  for (const p of document.querySelectorAll('#booking-modal .bm-panel')) p.classList.toggle('active', p.dataset.tab === name);
+}
+
+function highlightBtnGroup(groupId, value) {
+  for (const b of document.querySelectorAll('#' + groupId + ' button')) {
+    b.classList.toggle('selected', b.dataset.value === value);
+  }
+}
+
+function selectInGroup(groupId, value) {
+  highlightBtnGroup(groupId, value);
+}
+
+function getSelectedInGroup(groupId) {
+  const sel = document.querySelector('#' + groupId + ' button.selected');
+  return sel ? sel.dataset.value : null;
+}
+
+async function saveBookingModal() {
+  if (currentIdx < 0) return;
+  const b = window.BOOKINGS[currentIdx];
+  const status = document.getElementById('bm-status-msg');
+  status.textContent = 'saving…';
+  try {
+    // 1) Save Details tab (if any field changed from the original)
+    const detailsBody = {};
+    const fieldMap = { service:'bm-service', price:'bm-price', vehicle:'bm-vehicle', address:'bm-address', name:'bm-name', mobile:'bm-mobile', notes:'bm-event-notes' };
+    const originalMap = { service:b.service, price:b.price, vehicle:b.vehicle, address:b.address, name:b.name, mobile:b.mobile, notes:b.notes };
+    let detailsChanged = false;
+    for (const [field, inputId] of Object.entries(fieldMap)) {
+      const newVal = (document.getElementById(inputId).value || '').trim();
+      const oldVal = (originalMap[field] || '').trim();
+      if (newVal !== oldVal) { detailsBody[field] = newVal; detailsChanged = true; }
+    }
+    if (detailsChanged) {
+      const r = await fetch(window.EDIT_URL + '&uid=' + encodeURIComponent(b.uid), {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(detailsBody),
+      });
+      if (!r.ok) throw new Error((await r.json()).error || 'edit failed');
+      // Update local snapshot and row cells
+      Object.assign(b, detailsBody);
+      updateRowCells(currentIdx);
+    }
+    // 2) Save Mark tab (always; it's the primary intent)
+    const markBody = {
+      status: getSelectedInGroup('bm-status'),
+      payment_method: getSelectedInGroup('bm-method'),
+      actual_amount: document.getElementById('bm-amount').value,
+      our_notes: document.getElementById('bm-our-notes').value,
+      phone: b.phone || '',
+      psid: b.psid || '',
+      customer_name: b.name || '',
+    };
+    const r2 = await fetch(window.META_URL + '&uid=' + encodeURIComponent(b.uid), {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(markBody),
+    });
+    if (!r2.ok) throw new Error((await r2.json()).error || 'mark failed');
+    // Update local meta cache
+    const amtCents = markBody.actual_amount ? Math.round(parseFloat(markBody.actual_amount) * 100) : null;
+    window.META[b.uid] = { ...window.META[b.uid], status: markBody.status, payment_method: markBody.payment_method, actual_amount: amtCents, our_notes: markBody.our_notes };
+    renderBadge(currentIdx);
+    renderCollectedLine();
+    closeBookingModal();
+  } catch (e) {
+    status.textContent = '❌ ' + e.message;
+  }
+}
+
+async function clearBookingModal() {
+  if (currentIdx < 0) return;
+  const b = window.BOOKINGS[currentIdx];
+  if (!confirm('Clear all markings for this booking?')) return;
+  const r = await fetch(window.META_URL + '&uid=' + encodeURIComponent(b.uid), { method: 'DELETE' });
+  if (r.ok) {
+    delete window.META[b.uid];
+    renderBadge(currentIdx);
+    renderCollectedLine();
+    closeBookingModal();
+  }
+}
+
+function updateRowCells(idx) {
+  const b = window.BOOKINGS[idx];
+  const row = document.querySelector('tr[data-idx="' + idx + '"]');
+  if (!row) return;
+  const cells = row.querySelectorAll('td');
+  // Order: n(0) src(1) time(2) svc(3) price(4) veh(5) gas(6) addr(7) who(8) mark(9)
+  cells[3].textContent = b.service || '';
+  cells[4].textContent = b.price || '';
+  cells[5].textContent = b.vehicle || '';
+}
 </script>
 </head><body>
 <h1>Andy Auto AC Regas</h1>
@@ -1746,6 +2024,78 @@ function onNotesInput(e) {
   <div id="notes-print" class="notes-print">${noteTextEsc}</div>
 </div>
 ${equipmentBanner}${empty}${tableHtml}
+
+<div id="booking-modal" onclick="if(event.target===this)closeBookingModal()">
+  <div id="booking-modal-box">
+    <div class="bm-header">
+      <div class="bm-title" id="bm-title"></div>
+      <button class="bm-close" onclick="closeBookingModal()">×</button>
+    </div>
+    <div class="bm-tabs">
+      <button class="bm-tab active" data-tab="mark" onclick="switchTab('mark')">💵 Status / Pay</button>
+      <button class="bm-tab" data-tab="details" onclick="switchTab('details')">📝 Details</button>
+    </div>
+
+    <div class="bm-panel active" data-tab="mark">
+      <div class="bm-group">
+        <label>Status</label>
+        <div class="bm-group-btns" id="bm-status">
+          <button data-value="done" onclick="selectInGroup('bm-status','done')">✓ Done</button>
+          <button data-value="partial" onclick="selectInGroup('bm-status','partial')">◐ Partial</button>
+          <button data-value="no_show" onclick="selectInGroup('bm-status','no_show')">✗ No-show</button>
+          <button data-value="cancelled" onclick="selectInGroup('bm-status','cancelled')">— Cancel</button>
+        </div>
+      </div>
+      <div class="bm-group">
+        <label>Payment method</label>
+        <div class="bm-group-btns" id="bm-method">
+          <button data-value="cash" onclick="selectInGroup('bm-method','cash')">Cash</button>
+          <button data-value="payid" onclick="selectInGroup('bm-method','payid')">PayID</button>
+          <button data-value="mixed" onclick="selectInGroup('bm-method','mixed')">Mixed</button>
+          <button data-value="unpaid" onclick="selectInGroup('bm-method','unpaid')">Unpaid</button>
+        </div>
+      </div>
+      <div class="bm-group">
+        <label>Actual amount ($)</label>
+        <input type="number" id="bm-amount" step="0.01" min="0" inputmode="decimal">
+      </div>
+      <div class="bm-group">
+        <label>Our notes (private)</label>
+        <textarea id="bm-our-notes" placeholder="e.g. 车坏得没法修 only did inspection"></textarea>
+      </div>
+    </div>
+
+    <div class="bm-panel" data-tab="details">
+      <div class="bm-row">
+        <div><label>Service</label><input id="bm-service"></div>
+        <div><label>Price</label><input id="bm-price"></div>
+      </div>
+      <div class="bm-group"><label>Vehicle</label><input id="bm-vehicle"></div>
+      <div class="bm-group"><label>Address</label><input id="bm-address"></div>
+      <div class="bm-row">
+        <div><label>Customer</label><input id="bm-name"></div>
+        <div><label>Mobile</label><input id="bm-mobile"></div>
+      </div>
+      <div class="bm-group"><label>Event notes (in Calendar description)</label><textarea id="bm-event-notes"></textarea></div>
+    </div>
+
+    <div class="bm-actions">
+      <button class="btn-clear" id="bm-clear" onclick="clearBookingModal()">Clear markings</button>
+      <div style="flex:1"></div>
+      <span class="bm-status" id="bm-status-msg"></span>
+      <button class="btn-cancel" onclick="closeBookingModal()">Cancel</button>
+      <button class="btn-save" onclick="saveBookingModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+window.BOOKINGS = ${JSON.stringify(bookingData)};
+window.META_URL = '${origin}/bookings/meta?secret=${secret}';
+window.EDIT_URL = '${origin}/bookings/edit?secret=${secret}';
+if (window.BOOKINGS.length) loadMeta();
+</script>
+
 <div id="print-modal">
   <div id="print-modal-box">
     <div>Print appointments for</div>
@@ -1831,6 +2181,380 @@ async function refrigerantPricesHandler(req, env) {
     return jsonResponse({ ok: true, prices: clean });
   }
   return jsonResponse({ error: 'method not allowed' }, 405);
+}
+
+// =========================================================================
+// CRM: 工单标记 (bookings_meta) + Calendar 事件编辑
+// =========================================================================
+
+const BOOKING_STATUSES = new Set(['done', 'partial', 'no_show', 'cancelled']);
+const PAYMENT_METHODS = new Set(['cash', 'payid', 'mixed', 'unpaid']);
+
+function parsePriceCents(priceStr) {
+  if (!priceStr) return null;
+  const m = String(priceStr).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+  if (!m) return null;
+  return Math.round(parseFloat(m[0]) * 100);
+}
+
+// Upsert customers row keyed by phone or psid (whichever is non-empty).
+async function upsertCustomer(env, { phone, psid, name, amount_cents, now }) {
+  if (!env.DB) return;
+  if (!phone && !psid) return;
+  try {
+    // Try to find existing row
+    let existing;
+    if (phone) {
+      existing = (await env.DB.prepare(`SELECT * FROM customers WHERE phone = ?`).bind(phone).first());
+    }
+    if (!existing && psid) {
+      existing = (await env.DB.prepare(`SELECT * FROM customers WHERE psid = ?`).bind(psid).first());
+    }
+    if (existing) {
+      // Merge: fill in missing name, update last_seen, bump visit_count if amount > 0, add to total_paid
+      const newName = existing.name || name || null;
+      const newLast = Math.max(existing.last_seen || 0, now);
+      const bump = amount_cents && amount_cents > 0 ? 1 : 0;
+      const addPaid = amount_cents && amount_cents > 0 ? amount_cents : 0;
+      await env.DB.prepare(
+        `UPDATE customers SET name = ?, last_seen = ?, visit_count = visit_count + ?, total_paid = total_paid + ?,
+                              phone = COALESCE(phone, ?), psid = COALESCE(psid, ?)
+         WHERE id = ?`
+      ).bind(newName, newLast, bump, addPaid, phone, psid, existing.id).run();
+    } else {
+      await env.DB.prepare(
+        `INSERT INTO customers (phone, psid, name, first_seen, last_seen, visit_count, total_paid)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).bind(phone || null, psid || null, name || null, now, now,
+             amount_cents > 0 ? 1 : 0, amount_cents > 0 ? amount_cents : 0).run();
+    }
+  } catch (e) {
+    console.error('upsertCustomer failed', e);
+  }
+}
+
+async function bookingsMetaHandler(req, url, env) {
+  if (!env.DB) return jsonResponse({ error: 'D1 binding missing' }, 500);
+  const uid = url.searchParams.get('uid');
+  const date = url.searchParams.get('date');  // YYYY-MM-DD — bulk read by day
+
+  if (req.method === 'GET') {
+    if (uid) {
+      const row = await env.DB.prepare(`SELECT * FROM bookings_meta WHERE calendar_uid = ?`).bind(uid).first();
+      return jsonResponse({ meta: row || null });
+    }
+    // Bulk GET: return ALL meta rows (the print page filters client-side by UID).
+    // Dataset is small (days of bookings), no point paginating.
+    const { results } = await env.DB.prepare(`SELECT * FROM bookings_meta`).all();
+    const map = {};
+    for (const r of results) map[r.calendar_uid] = r;
+    return jsonResponse({ meta: map });
+  }
+
+  if (req.method === 'POST') {
+    if (!uid) return jsonResponse({ error: 'uid required' }, 400);
+    const body = await req.json();
+    const status = body.status && BOOKING_STATUSES.has(body.status) ? body.status : null;
+    const method = body.payment_method && PAYMENT_METHODS.has(body.payment_method) ? body.payment_method : null;
+    let amountCents = null;
+    if (body.actual_amount !== undefined && body.actual_amount !== '' && body.actual_amount !== null) {
+      const n = Number(body.actual_amount);
+      if (Number.isFinite(n) && n >= 0 && n < 1e8) amountCents = Math.round(n * 100);
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const phone = (body.phone || '').trim() || null;
+    const psid = (body.psid || '').trim() || null;
+    const notes = String(body.our_notes || '').trim();
+    const paidAt = (status === 'done' || status === 'partial') ? now : null;
+
+    await env.DB.prepare(
+      `INSERT INTO bookings_meta (calendar_uid, phone, psid, status, actual_amount, payment_method, paid_at, our_notes, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(calendar_uid) DO UPDATE SET
+         phone = COALESCE(excluded.phone, phone),
+         psid  = COALESCE(excluded.psid, psid),
+         status = excluded.status,
+         actual_amount = excluded.actual_amount,
+         payment_method = excluded.payment_method,
+         paid_at = excluded.paid_at,
+         our_notes = excluded.our_notes,
+         updated_at = excluded.updated_at`
+    ).bind(uid, phone, psid, status, amountCents, method, paidAt, notes, now).run();
+
+    // Side effect: upsert customer and bump totals
+    if (phone || psid) {
+      await upsertCustomer(env, {
+        phone, psid, name: body.customer_name || null,
+        amount_cents: amountCents || 0, now,
+      });
+    }
+
+    return jsonResponse({ ok: true });
+  }
+
+  if (req.method === 'DELETE') {
+    if (!uid) return jsonResponse({ error: 'uid required' }, 400);
+    await env.DB.prepare(`DELETE FROM bookings_meta WHERE calendar_uid = ?`).bind(uid).run();
+    return jsonResponse({ ok: true });
+  }
+
+  return jsonResponse({ error: 'method not allowed' }, 405);
+}
+
+async function reportPage(req, url, env) {
+  if (!env.DB) return new Response('D1 binding missing', { status: 500 });
+  const cfg = config(env);
+  const today = todayInTz(cfg.tz);
+  const period = url.searchParams.get('period') || 'month';   // month / ytd / 30d
+  const monthParam = url.searchParams.get('month');           // YYYY-MM
+  const wantsCsv = url.searchParams.get('format') === 'csv';
+
+  // Resolve [startTs, endTs) in unix seconds for the chosen period.
+  let startSec, endSec, label;
+  if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
+    const [y, m] = monthParam.split('-').map(Number);
+    startSec = Math.floor(new Date(Date.UTC(y, m - 1, 1)).getTime() / 1000);
+    endSec = Math.floor(new Date(Date.UTC(y, m, 1)).getTime() / 1000);
+    label = `${monthParam}`;
+  } else if (period === 'ytd') {
+    startSec = Math.floor(new Date(Date.UTC(today.y, 0, 1)).getTime() / 1000);
+    endSec = Math.floor(Date.now() / 1000) + 86400;
+    label = `YTD ${today.y}`;
+  } else if (period === '30d') {
+    endSec = Math.floor(Date.now() / 1000) + 86400;
+    startSec = endSec - 30 * 86400;
+    label = 'Last 30 days';
+  } else {
+    // default: current month
+    startSec = Math.floor(new Date(Date.UTC(today.y, today.m - 1, 1)).getTime() / 1000);
+    endSec = Math.floor(new Date(Date.UTC(today.y, today.m, 1)).getTime() / 1000);
+    label = `${today.y}-${pad(today.m)}`;
+  }
+
+  // Pull all bookings_meta rows in the time window (by paid_at).
+  const { results: metas } = await env.DB.prepare(
+    `SELECT * FROM bookings_meta
+       WHERE paid_at IS NOT NULL
+         AND paid_at >= ? AND paid_at < ?
+       ORDER BY paid_at ASC`
+  ).bind(startSec, endSec).all();
+
+  // Aggregations
+  let collected = 0, quoted = 0, cash = 0, payid = 0, mixed = 0, unpaidAmt = 0;
+  let countDone = 0, countPartial = 0, countNoShow = 0, countCancel = 0, countUnpaid = 0;
+  const byDay = new Map();    // 'YYYY-MM-DD' → {count, collected}
+  const byMethod = { cash: 0, payid: 0, mixed: 0, unpaid: 0 };
+
+  for (const r of metas) {
+    const amt = r.actual_amount || 0;
+    if (r.status === 'done') countDone++;
+    else if (r.status === 'partial') countPartial++;
+    else if (r.status === 'no_show') countNoShow++;
+    else if (r.status === 'cancelled') countCancel++;
+    if (r.status === 'done' || r.status === 'partial') collected += amt;
+    if (r.payment_method === 'cash') { cash += amt; byMethod.cash++; }
+    else if (r.payment_method === 'payid') { payid += amt; byMethod.payid++; }
+    else if (r.payment_method === 'mixed') { mixed += amt; byMethod.mixed++; }
+    else if (r.payment_method === 'unpaid') { unpaidAmt += amt; byMethod.unpaid++; countUnpaid++; }
+    // Group by local day
+    const dt = new Date(r.paid_at * 1000);
+    const localStr = new Date(dt.toLocaleString('en-US', { timeZone: cfg.tz }));
+    const dayKey = `${localStr.getFullYear()}-${pad(localStr.getMonth()+1)}-${pad(localStr.getDate())}`;
+    const bucket = byDay.get(dayKey) || { count: 0, collected: 0, cash: 0, payid: 0, unpaid: 0 };
+    bucket.count++;
+    if (r.status === 'done' || r.status === 'partial') bucket.collected += amt;
+    if (r.payment_method === 'cash') bucket.cash += amt;
+    else if (r.payment_method === 'payid') bucket.payid += amt;
+    else if (r.payment_method === 'unpaid') bucket.unpaid += amt;
+    byDay.set(dayKey, bucket);
+  }
+
+  if (wantsCsv) {
+    const rows = [['date', 'count', 'collected_cents', 'cash_cents', 'payid_cents', 'unpaid_cents']];
+    for (const [day, b] of Array.from(byDay.entries()).sort().reverse()) {
+      rows.push([day, b.count, b.collected, b.cash, b.payid, b.unpaid]);
+    }
+    const csv = rows.map(r => r.join(',')).join('\n');
+    return new Response(csv, {
+      headers: {
+        'Content-Type': 'text/csv;charset=utf-8',
+        'Content-Disposition': `attachment; filename="andy-auto-${label}.csv"`,
+      },
+    });
+  }
+
+  const money = c => '$' + (c/100).toFixed(2);
+  const secret = encodeURIComponent(env.VERIFY_TOKEN || '');
+  const base = `${url.origin}/report?secret=${secret}`;
+  const dayRows = Array.from(byDay.entries()).sort().reverse().slice(0, 62).map(([day, b]) => `
+      <tr>
+        <td>${day}</td>
+        <td>${b.count}</td>
+        <td>${money(b.collected)}</td>
+        <td>${money(b.cash)}</td>
+        <td>${money(b.payid)}</td>
+        <td>${b.unpaid ? '<span class="unpaid">' + money(b.unpaid) + '</span>' : ''}</td>
+      </tr>`).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Andy Auto – Report ${label}</title>
+<style>
+  body { font-family: -apple-system, Arial, sans-serif; margin: 20px; color: #111; max-width: 900px; }
+  h1 { font-size: 1.2em; margin: 0 0 4px; }
+  .sub { color: #666; font-size: 0.85em; margin-bottom: 16px; }
+  .period-nav { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .period-nav a { padding: 6px 10px; border: 1px solid #bbb; color: #333; background: #f5f5f5; text-decoration: none; border-radius: 6px; font-size: 0.85em; }
+  .period-nav a.active { background: #222; color: #fff; border-color: #222; }
+  .period-nav .csv-btn { margin-left: auto; background: #2a7a2a; color: #fff; border-color: #2a7a2a; }
+  .totals { background: #f5f5f5; padding: 16px 18px; border-radius: 8px; margin-bottom: 20px; }
+  .totals .big { font-size: 1.8em; font-weight: bold; color: #060; margin: 4px 0 8px; }
+  .totals .quoted { font-size: 1em; color: #555; }
+  .totals .gap { font-size: 0.9em; color: #a00; margin-top: 6px; }
+  .totals .breakdown { font-size: 0.95em; color: #333; margin-top: 10px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 18px; }
+  .stats .box { background: #fafafa; border: 1px solid #eee; border-radius: 6px; padding: 10px 12px; }
+  .stats .box .k { font-size: 0.78em; color: #777; }
+  .stats .box .v { font-size: 1.15em; font-weight: bold; color: #111; margin-top: 2px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
+  th { background: #222; color: #fff; padding: 7px 10px; text-align: left; font-weight: normal; }
+  td { padding: 7px 10px; border-bottom: 1px solid #eee; }
+  .unpaid { color: #a00; font-weight: bold; }
+  .empty { color: #888; font-style: italic; padding: 24px; text-align: center; }
+</style></head><body>
+<h1>Andy Auto – Revenue Report</h1>
+<div class="sub">${label}  (${metas.length} bookings marked)</div>
+
+<div class="period-nav">
+  <a href="${base}&period=30d" class="${period==='30d'?'active':''}">Last 30 days</a>
+  <a href="${base}" class="${!monthParam && period==='month'?'active':''}">This month</a>
+  <a href="${base}&period=ytd" class="${period==='ytd'?'active':''}">YTD ${today.y}</a>
+  <a class="csv-btn" href="${base}&format=csv${monthParam ? '&month=' + monthParam : period==='ytd' ? '&period=ytd' : period==='30d' ? '&period=30d' : ''}">⬇ CSV</a>
+</div>
+
+${metas.length === 0 ? `
+<div class="empty">No bookings marked in this period. Start marking jobs on <a href="/print?secret=${secret}">/print</a>.</div>
+` : `
+<div class="totals">
+  <div style="color:#555;font-size:0.85em;">Collected</div>
+  <div class="big">${money(collected)}</div>
+  <div class="quoted">Quoted ${money(quoted || collected)} ${collected < (quoted || collected) ? '(gap ' + money((quoted || collected) - collected) + ')' : ''}</div>
+  <div class="breakdown">
+    💵 Cash ${money(cash)}  ·
+    📱 PayID ${money(payid)}  ·
+    ${mixed ? '📊 Mixed ' + money(mixed) + '  ·  ' : ''}
+    ${unpaidAmt ? '<span class="unpaid">⚠ Unpaid ' + money(unpaidAmt) + ' (' + countUnpaid + ')</span>' : '<span style="color:#060">All paid ✓</span>'}
+  </div>
+</div>
+
+<div class="stats">
+  <div class="box"><div class="k">Done</div><div class="v">${countDone}</div></div>
+  <div class="box"><div class="k">Partial</div><div class="v">${countPartial}</div></div>
+  <div class="box"><div class="k">No-show</div><div class="v">${countNoShow}</div></div>
+  <div class="box"><div class="k">Cancelled</div><div class="v">${countCancel}</div></div>
+</div>
+
+<h2 style="font-size:1em;margin-top:24px;margin-bottom:8px;">Per-day breakdown (most recent first, up to 62 days)</h2>
+<table>
+  <thead><tr><th>Date</th><th>#</th><th>Collected</th><th>Cash</th><th>PayID</th><th>Unpaid</th></tr></thead>
+  <tbody>${dayRows}</tbody>
+</table>
+`}
+</body></html>`;
+
+  return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8' } });
+}
+
+async function bookingEditHandler(req, url, env) {
+  // Edit a Calendar event's fields (Service/Price/Vehicle/Address/Customer/Mobile/Notes).
+  // Reuses the same CalDAV update flow as SMS/FB booking updates.
+  const uid = url.searchParams.get('uid');
+  if (!uid) return jsonResponse({ error: 'uid required' }, 400);
+  const body = await req.json();
+  const cfg = config(env);
+
+  // Find the event by UID
+  const cal = await calendarUrl(env);
+  const findBody = `${XML_HEAD}<c:calendar-query ${NS}><d:prop><d:getetag/><c:calendar-data/></d:prop>` +
+    `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+    `<c:prop-filter name="UID"><c:text-match>${icsEsc(uid)}</c:text-match></c:prop-filter>` +
+    `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`;
+  const r = await dav(env, 'REPORT', cal, { depth: 1, body: findBody });
+  const resp = xmlOne(r.text, 'response');
+  if (!resp) return jsonResponse({ error: 'event not found' }, 404);
+  const ics = xmlText(xmlOne(resp, 'calendar-data'));
+  const href = new URL(xmlText(xmlOne(resp, 'href')), cal).href;
+  const etag = xmlText(xmlOne(resp, 'getetag')) || null;
+  const target = parseEvent(ics, cfg.tz);
+
+  const changes = {
+    SEQUENCE: [`SEQUENCE:${(target.sequence || 0) + 1}`],
+    DTSTAMP: [`DTSTAMP:${utcStamp(Date.now())}`],
+    'LAST-MODIFIED': [`LAST-MODIFIED:${utcStamp(Date.now())}`],
+  };
+
+  // New values (undefined = skip, '' = clear)
+  const fields = ['service', 'price', 'vehicle', 'address', 'name', 'mobile', 'notes'];
+  const newVals = {};
+  for (const f of fields) {
+    if (body[f] !== undefined) newVals[f] = String(body[f] || '').trim();
+  }
+
+  if (newVals.address !== undefined) {
+    const clean = normalizeAddress(newVals.address);
+    changes.LOCATION = [`LOCATION:${icsEsc(clean)}`];
+  }
+
+  // Update description: merge in any changed field as a `Field: value` line
+  if (newVals.service !== undefined || newVals.price !== undefined ||
+      newVals.vehicle !== undefined || newVals.address !== undefined ||
+      newVals.mobile !== undefined || newVals.notes !== undefined ||
+      newVals.name !== undefined) {
+    const desc = (target.description || '').split('\n');
+    const updateLine = (field, label) => {
+      if (newVals[field] === undefined) return;
+      const re = new RegExp('^' + label + ':\\s*', 'i');
+      const idx = desc.findIndex(l => re.test(l));
+      const line = newVals[field] ? `${label}: ${newVals[field]}` : '';
+      if (idx >= 0) {
+        if (line) desc[idx] = line; else desc.splice(idx, 1);
+      } else if (line) {
+        desc.push(line);
+      }
+    };
+    updateLine('service', 'Service');
+    updateLine('price', 'Price');
+    updateLine('vehicle', 'Vehicle');
+    updateLine('address', 'Address');
+    updateLine('mobile', 'Mobile');
+    updateLine('notes', 'Notes');
+    updateLine('name', 'Name');
+    changes.DESCRIPTION = [`DESCRIPTION:${icsEsc(desc.filter(Boolean).join('\n'))}`];
+  }
+
+  // Rebuild summary when name/service/price changed
+  if (newVals.name !== undefined || newVals.service !== undefined || newVals.price !== undefined) {
+    const name = newVals.name !== undefined ? newVals.name : (target.name || '');
+    const service = newVals.service !== undefined ? newVals.service : (target.service || '');
+    const price = newVals.price !== undefined ? newVals.price : (target.price || '');
+    changes.SUMMARY = [`SUMMARY:${icsEsc(buildSummary(name || 'Customer', service, price))}`];
+    // Also update X- fields where they exist
+    if (newVals.name !== undefined) changes['X-FB-NAME'] = [`X-FB-NAME:${icsEsc(newVals.name)}`];
+    if (newVals.service !== undefined) changes['X-FB-SERVICE'] = [`X-FB-SERVICE:${icsEsc(newVals.service)}`];
+    if (newVals.price !== undefined) changes['X-FB-PRICE'] = [`X-FB-PRICE:${icsEsc(newVals.price)}`];
+  }
+
+  try {
+    await dav(env, 'PUT', href, {
+      body: editEvent(ics, changes),
+      headers: etag ? { 'if-match': etag } : {},
+    });
+  } catch (e) {
+    if (e.status === 412) return jsonResponse({ error: 'event changed elsewhere, reload and try again' }, 409);
+    return jsonResponse({ error: e.message || 'update failed' }, 500);
+  }
+
+  return jsonResponse({ ok: true });
 }
 
 function vehiclesAdminPage(env, origin) {
@@ -2175,6 +2899,37 @@ async function vehiclesApi(req, env) {
   }
 
   return jsonResponse({ error: 'method not allowed' }, 405);
+}
+
+// Compact helper used by the print page: take structured vehicle fields and
+// return a short gas-suggestion string like '500g' or '500g or 580g'.
+// Returns '' when there are no structured fields or no DB match.
+async function suggestGasFor(env, { make, model, year, variant }) {
+  if (!env.DB || !make || !model || !year) return '';
+  const y = Number(year);
+  if (!Number.isInteger(y)) return '';
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT charge_g, variant FROM vehicles
+         WHERE make = ? COLLATE NOCASE
+           AND model = ? COLLATE NOCASE
+           AND ? BETWEEN year_start AND year_end
+         ORDER BY CASE WHEN variant = ? COLLATE NOCASE THEN 0
+                       WHEN variant = ''                 THEN 1
+                       ELSE 2 END`
+    ).bind(make, model, y, variant || '').all();
+    if (!results.length) return '';
+    // If variant was specified and we got exact match (ordered first), return that only
+    if (variant && results[0].variant && results[0].variant.toLowerCase() === variant.toLowerCase()) {
+      return `${results[0].charge_g}g`;
+    }
+    const uniq = Array.from(new Set(results.map(r => r.charge_g))).sort((a,b) => a-b);
+    if (uniq.length === 1) return `${uniq[0]}g`;
+    return uniq.slice(0, 3).map(g => `${g}g`).join(' or ');
+  } catch (e) {
+    console.error('suggestGasFor failed', e);
+    return '';
+  }
 }
 
 async function vehicleLookup(params, env) {
@@ -2665,7 +3420,12 @@ function buildEvent({ uid, startMs, endMs, summary, location, description, url, 
   if (location) L.push(`LOCATION:${icsEsc(location)}`);
   if (description) L.push(`DESCRIPTION:${icsEsc(description)}`);
   if (url) L.push(`URL;VALUE=URI:${url}`);
-  for (const [k, v] of Object.entries(x || {})) if (v) L.push(`X-FB-${k.toUpperCase()}:${icsEsc(v)}`);
+  for (const [k, v] of Object.entries(x || {})) {
+    if (!v) continue;
+    // Keys starting with 'X-' are passed through; otherwise add X-FB- prefix
+    const key = /^X-/i.test(k) ? k.toUpperCase() : `X-FB-${k.toUpperCase()}`;
+    L.push(`${key}:${icsEsc(v)}`);
+  }
   L.push('SEQUENCE:0', 'STATUS:CONFIRMED', 'END:VEVENT', 'END:VCALENDAR');
   return L.map(icsFold).join('\r\n') + '\r\n';
 }
@@ -2688,6 +3448,7 @@ function parseEvent(ics, tz) {
     sequence: parseInt(val('SEQUENCE') || '0', 10) || 0,
     description: val('DESCRIPTION'), summary: val('SUMMARY'), location: val('LOCATION'),
     psid: val('X-FB-PSID'), name: val('X-FB-NAME'), service: val('X-FB-SERVICE'), price: val('X-FB-PRICE'),
+    veh_make: val('X-VEH-MAKE'), veh_model: val('X-VEH-MODEL'), veh_year: val('X-VEH-YEAR'), veh_variant: val('X-VEH-VARIANT'),
   };
 }
 
