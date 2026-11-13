@@ -108,55 +108,102 @@ Andy 打开审批页面
 
 ---
 
-## 待做：每日收入汇总 + 工单标记 💰
+## 待做：CRM 蓝图（2026-11-13 设计讨论）
 
-**核心需求**
+Andy 希望打印页逐步演化成一个 CRM。所有阶段都基于一个核心架构决定：
 
-Andy 每单做完后想标记 3 个维度：
-1. **完成状态** — 做完 / 部分完成（只做了检查）/ 客人没来 / 其他
-2. **支付方式** — Cash / PayID / 转账 / 未付
-3. **实收金额** — 可能跟原报价不同（例如报 $160 但只做了检查收 $50）
+### 架构决定（已同意）
 
-**典型用例**
-- 第 3 单客人车坏得没法修，只收了 $50 检查费（现金）
-- 第 5 单做完了，$165 PayID
-- 第 7 单客人没出现，$0
+**数据分层：**
+- **iCloud Calendar 仍是预约时间/地点的 source of truth**（苹果多设备同步免费、稳定）
+- **Cloudflare D1 存"所有预约之后沉淀的数据"**（付款、状态、客户档案、历史）
+- 打印页/CRM 页从 Calendar events + D1 join 查询展示
 
-**推荐设计（待确认）**
+**D1 Schema 扩展**（和 `vehicles` 表并列）：
+```sql
+customers (
+  phone           TEXT PRIMARY KEY,
+  name            TEXT,
+  first_seen      INTEGER,          -- unix ts
+  last_seen       INTEGER,
+  visit_count     INTEGER DEFAULT 0,
+  total_paid      INTEGER DEFAULT 0, -- cents
+  notes           TEXT DEFAULT ''
+);
 
-- 页面分工：
-  - `/print` 打印页**只读**显示已标记的信息（每行末尾一个小 badge：💵 $165 Cash / ⚠️ $50 partial / ❌ no-show）
-  - 单独 `/summary?date=YYYY-MM-DD` 页面做输入
-- 输入 UX（手机优先）：
-  - 点一行 → 弹出小 modal
-  - 选完成状态（done / partial / no-show / other）
-  - 选支付方式（Cash / PayID / Transfer / Unpaid）
-  - 填实收金额（默认是原报价）
-  - 可选备注
-- 底部汇总：今日总收入 + Cash 小计 + PayID 小计 + 未付小计
-- 数据：KV 存 60 天（足够对账），永久保存等有 CRM 需求再上 D1
-  - Key: `payment:{calendar-event-uid}`
-  - Value: `{ status, paymentMethod, actualAmount, notes, timestamp }`
-
-**可能需要数据库（D1）的场景**
-- 跨天查询（本周/本月收入统计）
-- 客人维度查询（这个客人历史付了多少 / 欠多少）
-- CRM / 看板（见下方段落）
-- 月度/年度报表导出
-
-**待确认的问题**
-- 什么时候标记？每单做完立刻标 vs 收工后统一标 vs 都支持
-- 标记是否要印在打印纸上？印出来隔天能对账，不印则纯数字记录
-- 底部汇总用什么周期？日 / 周 / 月
+bookings_meta (
+  calendar_uid    TEXT PRIMARY KEY,  -- 对应 iCal event UID
+  phone           TEXT,              -- fk → customers.phone
+  status          TEXT,              -- done / partial / no_show / cancelled
+  actual_amount   INTEGER,           -- cents
+  payment_method  TEXT,              -- cash / payid / mixed / unpaid
+  paid_at         INTEGER,
+  gas_used_g      INTEGER,
+  photos_url      TEXT,
+  our_notes       TEXT DEFAULT ''
+);
+```
 
 ---
 
-## 待做：CRM / 看板 📊
+### 第 1 波（已同意做，细节讨论中、未动手）
 
-- [ ] 建一个看板，集中显示所有客人信息：
-  - 姓名、电话、车型、地址、历史预约、报价记录
-  - 支持后续跟踪（follow-up）
-  - 可能用 Cloudflare D1 或外部工具实现
+- [ ] **Edit 预约字段**（刚讨论）
+  - 点行弹 modal
+  - 可改 Service / Price / Vehicle / Address / Customer / Mobile / Notes
+  - 不改 Time / Date / Source
+  - 不通知客户
+  - 方案 A（modal + Save/Cancel）
+- [ ] **工单状态 + 支付方式 + 实收金额**（合在一起做）
+  - Status: done / partial / no-show / cancelled
+  - Payment: Cash / PayID / Mixed / Unpaid
+  - Actual amount（可能跟报价不同，默认是报价）
+  - 存 `bookings_meta` 表
+- [ ] **当日营业额 + Cash/PayID 小计**
+  - 打印页顶部/底部显示今日总收入、Cash/PayID/Unpaid 分别多少
+  - 从 `bookings_meta` 查
+- [ ] **冷媒量自动填**（Service + Vehicle → `vehicles` DB → charge_g）
+  - 新预约建立时后台查，填进 `gas_used_g` 字段
+  - 打印页显示建议用量，Andy 做完手动确认实际用量
+- [ ] **月/年收入汇总报表**
+  - `/report?year=2026&month=11` 或 `/report?period=ytd` 之类
+  - 按天/周/月聚合；Cash vs PayID 饼图；trend
+
+### 第 2 波（客户数据沉淀，上面做完再谈细节）
+
+- [ ] **客户列表**（按电话索引）
+- [ ] **历史服务记录**（点客户 → 看他所有预约）
+- [ ] **老客户自动识别**（新预约时标 "repeat customer, 上次 6 个月前"）
+- [ ] **车型记忆**（客户的车自动绑定，下次不用再问）
+- [ ] **常用备注**（"难搞" / "现金优先" / "门口没停车位" 等）
+
+### 第 3 波（主动营销）
+
+- [ ] **年度回访提醒**（1 年没来 → Bark 推送提示发个短信）
+- [ ] **拍照附件**（压力表、客户车，防纠纷。要规划存储，R2 适合）
+- [ ] **"在路上了" 一键发短信**
+- [ ] **CSV 导出给会计**
+- [ ] **PayID 收款 QR 码生成**
+
+### 长期（需要更大设计）
+
+- [ ] **自动报价系统** — 见本文件顶部"AI 自动报价"段落
+- [ ] **库存管理**（冷媒罐余量、O-ring/valve 库存）
+- [ ] **路线优化**
+- [ ] **拜访路径地图 / 区域热力图**
+- [ ] **货车保养 / 保险 / 年检到期提醒**
+- [ ] **Xero / MYOB 会计集成**
+- [ ] **电子发票 SMS 自动发送**
+
+### 备选 / 低优先（记下来但可能不做）
+
+- 忙闲时段图表
+- 常见车型 TOP 10（指导备什么耗材）
+- 月环比、年同比收入 trend
+- 区域热力图
+- 设备校准日期管理
+- 库存低自动提醒
+- 服务后自动请求好评
 
 ---
 
