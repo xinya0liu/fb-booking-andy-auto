@@ -146,28 +146,102 @@ bookings_meta (
 
 ---
 
-### 第 1 波（已同意做，细节讨论中、未动手）
+### 第 1 波（规格已锁定，2026-11-13 聊完）
 
-- [ ] **Edit 预约字段**（刚讨论）
-  - 点行弹 modal
-  - 可改 Service / Price / Vehicle / Address / Customer / Mobile / Notes
-  - 不改 Time / Date / Source
-  - 不通知客户
-  - 方案 A（modal + Save/Cancel）
-- [ ] **工单状态 + 支付方式 + 实收金额**（合在一起做）
-  - Status: done / partial / no-show / cancelled
-  - Payment: Cash / PayID / Mixed / Unpaid
-  - Actual amount（可能跟报价不同，默认是报价）
-  - 存 `bookings_meta` 表
-- [ ] **当日营业额 + Cash/PayID 小计**
-  - 打印页顶部/底部显示今日总收入、Cash/PayID/Unpaid 分别多少
-  - 从 `bookings_meta` 查
-- [ ] **冷媒量自动填**（Service + Vehicle → `vehicles` DB → charge_g）
-  - 新预约建立时后台查，填进 `gas_used_g` 字段
-  - 打印页显示建议用量，Andy 做完手动确认实际用量
-- [ ] **月/年收入汇总报表**
-  - `/report?year=2026&month=11` 或 `/report?period=ytd` 之类
-  - 按天/周/月聚合；Cash vs PayID 饼图；trend
+**实现顺序**（有依赖关系）：
+1. `bookings_meta` + `customers` schema + 状态/支付/实收 modal ← 核心
+2. 当日营业额 + Cash/PayID/Unpaid 小计
+3. Edit 预约字段（独立，可并行）
+4. 冷媒量显示（独立，可并行）
+5. 月/年收入汇总（有数据后）
+
+---
+
+**D1 schema 定稿：**
+
+```sql
+customers (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone           TEXT UNIQUE,         -- SMS 客户主键；FB 客户可能 NULL
+  psid            TEXT UNIQUE,         -- FB 客户主键；SMS 客户 NULL
+  name            TEXT,
+  first_seen      INTEGER,
+  last_seen       INTEGER,
+  visit_count     INTEGER DEFAULT 0,
+  total_paid      INTEGER DEFAULT 0,   -- cents
+  notes           TEXT DEFAULT ''
+);
+
+bookings_meta (
+  calendar_uid    TEXT PRIMARY KEY,
+  phone           TEXT,                -- 快照存一份方便查询，不是 FK
+  psid            TEXT,
+  status          TEXT,                -- done / partial / no_show / cancelled
+  actual_amount   INTEGER,             -- cents
+  payment_method  TEXT,                -- cash / payid / mixed / unpaid
+  paid_at         INTEGER,
+  our_notes       TEXT DEFAULT ''
+  -- 注意：不存 gas_used_g（Andy 没时间做这个动作）
+);
+```
+
+---
+
+**1. 工单标记 modal（核心）**
+
+- 入口：点打印页任意一行 → 弹 modal
+- 字段 + 默认值：
+  - **Status**：`done`（默认） / `partial` / `no-show` / `cancelled`
+  - **Payment**：上次这个客户用的方法，没记录就 Cash
+  - **Actual amount**：默认 = 报价
+  - **Notes**（可选）
+  - **Clear** 按钮：清掉所有标记恢复"未标"状态
+- **No-show 的单不删 Calendar 事件**（保留历史）
+- 存 `bookings_meta` 表
+- 已标记工单在打印页右侧显示 badge：`[💵 $155 Cash]` / `[⚠ $50 Partial]` / `[✗ No-show]`
+
+**2. 当日营业额 + 小计（打印页）**
+
+- 屏幕上顶部 h2：`9 bookings · Quoted $1,410 · Collected $1,245 (Cash $800, PayID $445) · 1 unpaid`
+- **打印时**：底部单独一行印 `Collected $1,245 · Cash $800 · PayID $445 · Unpaid 1`（方便对账）
+
+**3. Edit 预约字段**
+
+- 跟工单标记 modal **合并成一个 modal 两个 tab**：
+  - 📝 **Details**：Service / Price / Vehicle / Address / Customer / Mobile / Notes
+  - 💵 **Status / Payment**：上面那 4 个字段
+- 不改 Time / Date / Source
+- 不通知客户
+- 改 Price 会影响 Quoted 合计；改 Service 会影响 Calendar 标题
+
+**4. 冷媒量显示（不输入）**
+
+- Vehicle 字段解析走 **方案 C**：
+  - AI 新建预约时在 schema 里多返回 `vehicle_make` / `vehicle_model` / `vehicle_year` / `vehicle_variant`
+  - 存进 Calendar description 的 X-属性 或 单独字段
+  - 打印页从结构化字段读 → 查 `vehicles` D1 → 显示建议克数
+- 多候选处理：`"500g or 580g"`（variant 不明时）
+- 老预约 fallback：无结构化字段 → 不显示（不猜）
+- Andy **不输入**实际用量（没时间）；需要时参考打印页上的建议值
+
+**5. 月/年收入报表**
+
+- 新页面 `/report?secret=…[&year=2026&month=11|&period=ytd]`
+- 最小版：**文本表，不做图表**
+- 显示：
+  - 时段内 N 个 bookings、Quoted 合计、**Collected 合计**（分别出：差额就是漏收）
+  - Cash / PayID / Mixed / Unpaid 各自金额
+  - 每天汇总（最近 30 天或选定月份）
+  - Top services、Top vehicle makes
+- 导出 CSV 按钮（给会计）
+
+---
+
+**UX 原则**（跨所有 Phase 1 功能）：
+- 手机优先：按钮大、少打字
+- 默认值预填到位：理想状态下标记一单只要 2-3 次点击
+- 不做实时同步（SSE/polling）：手动 `Cmd+R` 刷新够用
+- 刷新快，不到 2 秒
 
 ### 第 2 波（客户数据沉淀，上面做完再谈细节）
 
