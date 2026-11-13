@@ -1896,23 +1896,13 @@ function openBookingModal(idx) {
   document.getElementById('bm-title').textContent = titleBits.length ? titleBits.join(' · ') : 'Booking';
   switchTab('mark');
 
-  // Drop trailing '.00' so whole-dollar defaults show as '155' not '155.00'
-  const fmt = cents => {
-    const d = cents / 100;
-    return d % 1 === 0 ? String(d) : d.toFixed(2);
-  };
-  // Prefill Mark tab
-  // Only pre-select buttons when this booking already has a mark. Opening
-  // a fresh (unmarked) booking leaves Status/Payment unselected so saving
-  // without touching them (e.g. after editing only Details) won't
-  // accidentally create a 'done' mark.
-  if (m.status) {
-    highlightBtnGroup('bm-status', m.status);
-    highlightBtnGroup('bm-method', m.payment_method || 'cash');
-  } else {
-    highlightBtnGroup('bm-status', null);
-    highlightBtnGroup('bm-method', null);
-  }
+  const fmt = fmtCents;
+  // Prefill Mark tab with Done + Cash as default so the common case
+  // (job finished, cash collected) is 1 click to Save. Double-clicking
+  // a status button deselects it, which skips the mark save — useful when
+  // Andy only wants to edit Details without creating a mark.
+  highlightBtnGroup('bm-status', m.status || 'done');
+  highlightBtnGroup('bm-method', m.payment_method || 'cash');
   const amt = m.actual_amount != null ? fmt(m.actual_amount) : (b.quoted_cents ? fmt(b.quoted_cents) : '');
   document.getElementById('bm-amount').value = amt;
   document.getElementById('bm-cash-portion').value = m.cash_portion != null ? fmt(m.cash_portion) : '';
@@ -1951,9 +1941,31 @@ function highlightBtnGroup(groupId, value) {
   }
 }
 
+function fmtCents(cents) {
+  const d = cents / 100;
+  return d % 1 === 0 ? String(d) : d.toFixed(2);
+}
+
 function selectInGroup(groupId, value) {
   highlightBtnGroup(groupId, value);
   if (groupId === 'bm-method') togglePaymentFields(value);
+  if (groupId === 'bm-status') {
+    const amt = document.getElementById('bm-amount');
+    if (value === 'no_show' || value === 'cancelled') {
+      amt.value = '0';
+    } else if (value === 'done' || value === 'partial') {
+      // Restore quoted amount when switching back from no-show/cancel
+      if (amt.value === '0' || amt.value === '') {
+        const b = window.BOOKINGS[currentIdx];
+        if (b && b.quoted_cents) amt.value = fmtCents(b.quoted_cents);
+      }
+    }
+  }
+}
+
+function deselectInGroup(groupId) {
+  highlightBtnGroup(groupId, null);
+  if (groupId === 'bm-method') togglePaymentFields('cash');
 }
 
 function togglePaymentFields(method) {
@@ -2113,21 +2125,21 @@ ${equipmentBanner}${empty}${tableHtml}
 
     <div class="bm-panel active" data-tab="mark">
       <div class="bm-group">
-        <label>Status</label>
+        <label>Status <span style="font-size:0.8em;color:#999;">(double-tap button to unmark)</span></label>
         <div class="bm-group-btns" id="bm-status">
-          <button data-value="done" onclick="selectInGroup('bm-status','done')">✓ Done</button>
-          <button data-value="partial" onclick="selectInGroup('bm-status','partial')">◐ Partial</button>
-          <button data-value="no_show" onclick="selectInGroup('bm-status','no_show')">✗ No-show</button>
-          <button data-value="cancelled" onclick="selectInGroup('bm-status','cancelled')">— Cancel</button>
+          <button data-value="done"      onclick="selectInGroup('bm-status','done')"      ondblclick="deselectInGroup('bm-status')">✓ Done</button>
+          <button data-value="partial"   onclick="selectInGroup('bm-status','partial')"   ondblclick="deselectInGroup('bm-status')">◐ Partial</button>
+          <button data-value="no_show"   onclick="selectInGroup('bm-status','no_show')"   ondblclick="deselectInGroup('bm-status')">✗ No-show</button>
+          <button data-value="cancelled" onclick="selectInGroup('bm-status','cancelled')" ondblclick="deselectInGroup('bm-status')">— Cancel</button>
         </div>
       </div>
       <div class="bm-group">
         <label>Payment method</label>
         <div class="bm-group-btns" id="bm-method">
-          <button data-value="cash" onclick="selectInGroup('bm-method','cash')">Cash</button>
-          <button data-value="payid" onclick="selectInGroup('bm-method','payid')">PayID</button>
-          <button data-value="mixed" onclick="selectInGroup('bm-method','mixed')">Mixed</button>
-          <button data-value="unpaid" onclick="selectInGroup('bm-method','unpaid')">Unpaid</button>
+          <button data-value="cash"   onclick="selectInGroup('bm-method','cash')"   ondblclick="deselectInGroup('bm-method')">Cash</button>
+          <button data-value="payid"  onclick="selectInGroup('bm-method','payid')"  ondblclick="deselectInGroup('bm-method')">PayID</button>
+          <button data-value="mixed"  onclick="selectInGroup('bm-method','mixed')"  ondblclick="deselectInGroup('bm-method')">Mixed</button>
+          <button data-value="unpaid" onclick="selectInGroup('bm-method','unpaid')" ondblclick="deselectInGroup('bm-method')">Unpaid</button>
         </div>
       </div>
       <div class="bm-group" id="bm-amount-group">
