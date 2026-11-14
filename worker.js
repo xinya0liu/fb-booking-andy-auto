@@ -2160,16 +2160,16 @@ ${equipmentBanner}${empty}${tableHtml}
       </div>
       <div class="bm-group" id="bm-amount-group">
         <label>Actual amount ($)</label>
-        <input type="number" id="bm-amount" step="0.01" min="0" inputmode="decimal">
+        <input type="number" id="bm-amount" step="0.01" inputmode="decimal">
       </div>
       <div class="bm-group" id="bm-mixed-group" style="display:none;">
-        <label>Split: Cash + PayID ($)</label>
+        <label>Split: Cash + PayID ($) <span style="font-size:0.8em;color:#999;">(negative = you refunded, e.g. 150 cash + -20 PayID change)</span></label>
         <div class="bm-row" style="margin-bottom:0;">
           <div>
-            <input type="number" id="bm-cash-portion" step="0.01" min="0" inputmode="decimal" placeholder="Cash" oninput="updateMixedTotal()">
+            <input type="number" id="bm-cash-portion" step="0.01" inputmode="decimal" placeholder="Cash" oninput="updateMixedTotal()">
           </div>
           <div>
-            <input type="number" id="bm-payid-portion" step="0.01" min="0" inputmode="decimal" placeholder="PayID" oninput="updateMixedTotal()">
+            <input type="number" id="bm-payid-portion" step="0.01" inputmode="decimal" placeholder="PayID" oninput="updateMixedTotal()">
           </div>
         </div>
         <div id="bm-mixed-total" style="font-size:0.85em;color:#666;margin-top:4px;"></div>
@@ -2380,18 +2380,22 @@ async function bookingsMetaHandlerInner(req, url, env) {
     const body = await req.json();
     const status = body.status && BOOKING_STATUSES.has(body.status) ? body.status : null;
     const method = body.payment_method && PAYMENT_METHODS.has(body.payment_method) ? body.payment_method : null;
+    // Negative amounts are legitimate: e.g. customer paid \$150 cash and
+    // Andy returned \$20 via PayID → cash_portion=15000, payid_portion=-2000,
+    // actual_amount=13000. Only null/empty maps to null; any finite number
+    // (positive, zero, negative) is accepted.
     const dollarsToCents = v => {
       if (v === undefined || v === '' || v === null) return null;
       const n = Number(v);
-      return Number.isFinite(n) && n >= 0 && n < 1e8 ? Math.round(n * 100) : null;
+      return Number.isFinite(n) && Math.abs(n) < 1e8 ? Math.round(n * 100) : null;
     };
     let amountCents = dollarsToCents(body.actual_amount);
     let cashPortion = null, payidPortion = null;
-    // Mixed: client sends cash_portion + payid_portion. Backend derives
-    // actual_amount = cash + payid so the total is always canonical.
     if (method === 'mixed') {
-      cashPortion = dollarsToCents(body.cash_portion) || 0;
-      payidPortion = dollarsToCents(body.payid_portion) || 0;
+      cashPortion = dollarsToCents(body.cash_portion);
+      payidPortion = dollarsToCents(body.payid_portion);
+      if (cashPortion === null) cashPortion = 0;
+      if (payidPortion === null) payidPortion = 0;
       amountCents = cashPortion + payidPortion;
     }
     const now = Math.floor(Date.now() / 1000);
