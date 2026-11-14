@@ -151,6 +151,12 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return reportPage(req, url, env);
     }
+    // One-off migration: rename "Notes:" → "AI notes:" in historic events.
+    // Idempotent: skips events that already have an "AI notes:" line.
+    if (url.pathname === '/migrate-ai-notes' && req.method === 'POST' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return migrateAiNotesHandler(env);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -569,7 +575,7 @@ async function saveSmsFromAi(ai, env, cfg, phone = '') {
   const link = smsLink(ai.mobile);
 
   const notes = ['SMS booking'];
-  const FIELDS = [['service','Service'],['price','Price'],['time','time'],['address','Address'],['mobile','Mobile'],['vehicle','Vehicle'],['notes','Notes']];
+  const FIELDS = [['service','Service'],['price','Price'],['time','time'],['address','Address'],['mobile','Mobile'],['vehicle','Vehicle'],['ai_notes','AI notes']];
   for (const [k, label] of FIELDS) {
     if (k === 'time') { notes.push(`Time: ${t.label}`); continue; }
     if (ai[k]) notes.push(`${label}: ${ai[k]}`);
@@ -605,7 +611,7 @@ async function saveSmsFromAi(ai, env, cfg, phone = '') {
 
   const lines = [
     [t.label, ai.service, ai.price].filter(Boolean).join(' · '),
-    ai.address, ai.mobile && `📱 ${ai.mobile}`, ai.vehicle && `🚗 ${ai.vehicle}`, ai.notes && `📝 ${ai.notes}`,
+    ai.address, ai.mobile && `📱 ${ai.mobile}`, ai.vehicle && `🚗 ${ai.vehicle}`, ai.ai_notes && `📝 ${ai.ai_notes}`,
   ].filter(Boolean);
   if (overlaps.length) lines.push(overlapLine(overlaps).trim());
   await barkBooking(env, `📅 SMS Booking added: ${name}`, lines.join('\n'), '', t.label);
@@ -666,9 +672,9 @@ Rules:
         vehicle_model: str('Just the model, e.g. "Camry", "Hilux", "CX-5". Leave "" if the model isn\'t clear.'),
         vehicle_year: str('4-digit year, e.g. "2016". Leave "" if the year isn\'t clear.'),
         vehicle_variant: str('Engine/trim distinguisher only when a customer specifically said so, e.g. "Hybrid", "Petrol", "Diesel", "2.5L". Leave "" otherwise.'),
-        notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
+        ai_notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful. This fills a dedicated "AI notes" field in the Calendar description. Do NOT write anything that belongs to Andys own records (prices, quotes, reminders) — that is a separate field Andy controls.'),
       },
-      required: ['name', 'date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_variant', 'notes'],
+      required: ['name', 'date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_variant', 'ai_notes'],
     },
   };
 
@@ -700,7 +706,7 @@ Rules:
 
   const cleanStr = s => String(s || '').trim().replace(/^["']+$/, '');
   const res = { name: cleanStr(o.name) };
-  for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'notes']) res[k] = String(o[k] || '').trim();
+  for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'ai_notes']) res[k] = String(o[k] || '').trim();
   res.address = normalizeAddress(res.address);
   const dm = String(o.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const sm = String(o.start || '').match(/^(\d{1,2}):(\d{2})$/);
@@ -757,9 +763,9 @@ ${conversationText}`;
         vehicle_model: str('Just the model, e.g. "Camry", "Hilux", "CX-5". Leave "" if the model isn\'t clear.'),
         vehicle_year: str('4-digit year, e.g. "2016". Leave "" if the year isn\'t clear.'),
         vehicle_variant: str('Engine/trim distinguisher only when a customer specifically said so, e.g. "Hybrid", "Petrol", "Diesel", "2.5L". Leave "" otherwise.'),
-        notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
+        ai_notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful. This fills a dedicated "AI notes" field in the Calendar description. Do NOT write anything that belongs to Andys own records (prices, quotes, reminders) — that is a separate field Andy controls.'),
       },
-      required: ['name', 'date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_variant', 'notes'],
+      required: ['name', 'date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_variant', 'ai_notes'],
     },
   };
 
@@ -788,7 +794,7 @@ ${conversationText}`;
 
   const cleanStr = s => String(s || '').trim().replace(/^["']+$/, '');
   const res = { name: cleanStr(o.name) };
-  for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'notes']) res[k] = String(o[k] || '').trim();
+  for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'ai_notes']) res[k] = String(o[k] || '').trim();
   res.address = normalizeAddress(res.address);
   const dm = String(o.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const sm = String(o.start || '').match(/^(\d{1,2}):(\d{2})$/);
@@ -849,7 +855,9 @@ async function saveNewBooking({ env, cfg, psid, mid, name, link }, { t, service,
 
 const CHAT_FIELDS = [
   ['service', 'Service'], ['price', 'Price'], ['time', 'Time'], ['address', 'Address'],
-  ['mobile', 'Mobile'], ['vehicle', 'Vehicle'], ['notes', 'Notes'],
+  ['mobile', 'Mobile'], ['vehicle', 'Vehicle'],
+  ['ai_notes', 'AI notes'],   // AI-extracted on-site info
+  ['notes', 'Notes'],         // user-typed, left blank when created from chat
 ];
 const BOT_TAG = 'fb-booking'; // Worker 自己发出的消息带这个标记，回传时不再处理
 
@@ -866,7 +874,17 @@ async function doConfirmFromChat(ctx, f) {
   const typed = {};
   for (const l of extraFields(text)) typed[fieldLabel(l).toLowerCase()] = l.slice(l.search(/[:：]/) + 1).trim();
   const d = {};
-  for (const [k, label] of CHAT_FIELDS) d[k] = typed[label.toLowerCase()] || ai[k] || '';
+  for (const [k, label] of CHAT_FIELDS) {
+    if (k === 'ai_notes') {
+      // AI-only field; user-typed "AI notes:" would be odd, ignore
+      d[k] = ai[k] || '';
+    } else if (k === 'notes') {
+      // User-only field; AI never writes here
+      d[k] = typed[label.toLowerCase()] || '';
+    } else {
+      d[k] = typed[label.toLowerCase()] || ai[k] || '';
+    }
+  }
 
   // 地址兜底：AI 拿不到时查这个客人的历史预约
   let usedPreviousAddress = false;
@@ -931,7 +949,7 @@ async function doConfirmFromChat(ctx, f) {
   const missing = ['service', 'price'].filter(k => !d[k]).map(k => CHAT_FIELDS.find(x => x[0] === k)[1]);
   const lines = [
     [t.label, d.service, d.price].filter(Boolean).join(' · '),
-    d.address, d.mobile && `📱 ${d.mobile}`, d.vehicle && `🚗 ${d.vehicle}`, d.notes && `📝 ${d.notes}`,
+    d.address, d.mobile && `📱 ${d.mobile}`, d.vehicle && `🚗 ${d.vehicle}`, d.ai_notes && `📝 ${d.ai_notes}`,
   ].filter(Boolean);
   if (w.warning) lines.push(w.warning);
   if (created.overlaps.length) lines.push(overlapLine(created.overlaps).trim());
@@ -1021,9 +1039,9 @@ ${transcript}`;
         address: str('Service address — use the most complete address mentioned: street number + street name + suburb is preferred over suburb alone. If a full street address and a suburb are both mentioned, use the full address. Preserve unit/flat numbers exactly as written (e.g. "2/32a Smith St" must stay as "2/32a Smith St", not "2 Smith St"). Do not include postcode, state (QLD) or country (Australia). No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
         mobile: str("Customer's mobile number. Leave \"\" if not mentioned."),
         vehicle: str('e.g. 2016 Toyota Camry. No explanatory notes or parenthetical comments. Leave "" if not mentioned.'),
-        notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful.'),
+        ai_notes: str('On-site info for the technician not captured elsewhere — e.g. gate code, parking, symptom, part needed. Leave "" if nothing genuinely useful. This fills a dedicated "AI notes" field in the Calendar description. Do NOT write anything that belongs to Andys own records (prices, quotes, reminders) — that is a separate field Andy controls.'),
       },
-      required: ['date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'notes'],
+      required: ['date', 'start', 'end', 'service', 'price', 'address', 'mobile', 'vehicle', 'ai_notes'],
     },
   };
 
@@ -1051,7 +1069,7 @@ ${transcript}`;
   }
 
   const res = {};
-  for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'notes']) res[k] = String(o[k] || '').trim();
+  for (const k of ['service', 'price', 'address', 'mobile', 'vehicle', 'ai_notes']) res[k] = String(o[k] || '').trim();
   const dm = String(o.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const sm = String(o.start || '').match(/^(\d{1,2}):(\d{2})$/);
   const em = String(o.end || '').match(/^(\d{1,2}):(\d{2})$/);
@@ -1547,7 +1565,16 @@ async function printPage(env, origin, dateParam = '') {
     const priceNum = parseInt(String(price).replace(/[^\d]/g, ''), 10);
     if (priceNum > 0) priceTotals.push(priceNum);
     const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
-    const descNotes = desc.match(/^Notes:\s*(.+)$/im)?.[1]?.trim() || '';
+    // Two separate notes fields in the Calendar description:
+    //   "AI notes: ..." = extracted by AI from the conversation (customer context)
+    //   "Notes: ..."    = Andy's own records (quotes, follow-up, reminders)
+    // Anchor the AI notes regex first because "Notes:" would otherwise also
+    // match it by case-insensitive greedy prefix.
+    const aiNotes = desc.match(/^AI notes:\s*(.+)$/im)?.[1]?.trim() || '';
+    // Strip the "AI notes:" line before matching the user's Notes line so
+    // the loose "Notes:" regex doesn't accidentally grab the AI line.
+    const descNoUniAi = desc.replace(/^AI notes:.*$/gim, '');
+    const userNotes = descNoUniAi.match(/^Notes:\s*(.+)$/im)?.[1]?.trim() || '';
     const srcClass = isSms ? 'badge-sms' : 'badge-fb';
     const srcLabel = isSms ? 'SMS' : 'FB';
     const addr = splitAddress(e.location || '');
@@ -1579,7 +1606,9 @@ async function printPage(env, origin, dateParam = '') {
       name: nameIsPhone || nameIsEmail ? '' : name,
       service, price, vehicle,
       address: e.location || '',
-      mobile, notes: descNotes,
+      mobile,
+      ai_notes: aiNotes,
+      notes: userNotes,
       quoted_cents: priceNum > 0 ? priceNum * 100 : 0,
       time: clock,
     });
@@ -1587,9 +1616,12 @@ async function printPage(env, origin, dateParam = '') {
     const gasSug = await suggestGasFor(env, {
       make: e.veh_make, model: e.veh_model, year: e.veh_year, variant: e.veh_variant,
     });
-    const serviceCell = descNotes
-      ? `${service}<div class="svc-notes">📝 ${descNotes}</div>`
-      : service;
+    // Show user notes (📌) and AI notes (🤖) stacked under the service.
+    // Print stylesheet hides the 🤖 line to keep paper compact.
+    const notesHtml = [];
+    if (userNotes) notesHtml.push(`<div class="svc-notes user-note">📌 ${userNotes}</div>`);
+    if (aiNotes) notesHtml.push(`<div class="svc-notes ai-note">🤖 ${aiNotes}</div>`);
+    const serviceCell = `${service}${notesHtml.join('')}`;
     return `<tr data-idx="${i}" onclick="openBookingModal(${i})">
       <td class="n">${i + 1}</td>
       <td class="src"><span class="${srcClass}">${srcLabel}</span></td>
@@ -1661,7 +1693,12 @@ async function printPage(env, origin, dateParam = '') {
   .badge-fb { background: #fff; color: #111; border: 1px solid #111; padding: 0 4px; }
   td.time { white-space: nowrap; font-weight: bold; font-size: 1.05em; }
   td.svc { max-width: 210px; word-break: break-word; }
-  td.svc .svc-notes { font-size: 0.82em; color: #666; font-style: italic; margin-top: 3px; line-height: 1.25; }
+  td.svc .svc-notes { font-size: 0.82em; margin-top: 3px; line-height: 1.25; }
+  td.svc .user-note { color: #333; font-weight: 500; }   /* 📌 Andy's own records — more prominent */
+  td.svc .ai-note   { color: #888; font-style: italic; } /* 🤖 AI-extracted context — dim */
+  @media print {
+    td.svc .ai-note { display: none; }                   /* print only user notes to save space */
+  }
   td.price { white-space: nowrap; }
   td.veh  { max-width: 170px; word-break: break-word; }
   td.addr { max-width: 260px; word-break: break-word; line-height: 1.3; }
@@ -1916,9 +1953,11 @@ function openBookingModal(idx) {
   document.getElementById('bm-address').value = b.address || '';
   document.getElementById('bm-name').value = b.name || '';
   document.getElementById('bm-mobile').value = b.mobile || '';
-  // Event notes shown on both tabs; same value
+  // 📌 user notes shown on both tabs — same underlying value, synced on input
   document.getElementById('bm-event-notes').value = b.notes || '';
   document.getElementById('bm-event-notes-mark').value = b.notes || '';
+  // 🤖 AI notes only on Details tab
+  document.getElementById('bm-ai-notes').value = b.ai_notes || '';
 
   document.getElementById('bm-status-msg').textContent = '';
   document.getElementById('booking-modal').classList.add('open');
@@ -2027,8 +2066,8 @@ async function saveBookingModal() {
   try {
     // 1) Save Details tab (if any field changed from the original)
     const detailsBody = {};
-    const fieldMap = { service:'bm-service', price:'bm-price', vehicle:'bm-vehicle', address:'bm-address', name:'bm-name', mobile:'bm-mobile', notes:'bm-event-notes' };
-    const originalMap = { service:b.service, price:b.price, vehicle:b.vehicle, address:b.address, name:b.name, mobile:b.mobile, notes:b.notes };
+    const fieldMap = { service:'bm-service', price:'bm-price', vehicle:'bm-vehicle', address:'bm-address', name:'bm-name', mobile:'bm-mobile', notes:'bm-event-notes', ai_notes:'bm-ai-notes' };
+    const originalMap = { service:b.service, price:b.price, vehicle:b.vehicle, address:b.address, name:b.name, mobile:b.mobile, notes:b.notes, ai_notes:b.ai_notes };
     let detailsChanged = false;
     for (const [field, inputId] of Object.entries(fieldMap)) {
       const newVal = (document.getElementById(inputId).value || '').trim();
@@ -2105,8 +2144,12 @@ function updateRowCells(idx) {
   const cells = row.querySelectorAll('td');
   // Order: n(0) src(1) time(2) svc(3) price(4) veh(5) gas(6) addr(7) who(8) mark(9)
   const svc = esc(b.service || '');
-  const n = (b.notes || '').trim();
-  cells[3].innerHTML = n ? \`\${svc}<div class="svc-notes">📝 \${esc(n)}</div>\` : svc;
+  const un = (b.notes || '').trim();
+  const an = (b.ai_notes || '').trim();
+  let html = svc;
+  if (un) html += \`<div class="svc-notes user-note">📌 \${esc(un)}</div>\`;
+  if (an) html += \`<div class="svc-notes ai-note">🤖 \${esc(an)}</div>\`;
+  cells[3].innerHTML = html;
   cells[4].textContent = b.price || '';
   cells[5].textContent = b.vehicle || '';
 }
@@ -2175,7 +2218,7 @@ ${equipmentBanner}${empty}${tableHtml}
         <div id="bm-mixed-total" style="font-size:0.85em;color:#666;margin-top:4px;"></div>
       </div>
       <div class="bm-group">
-        <label>Notes (goes to Calendar description)</label>
+        <label>📌 Notes (your own records — AI never touches this)</label>
         <textarea id="bm-event-notes-mark" placeholder="e.g. took $50 deposit, need to order O-rings" oninput="syncNotes('mark')"></textarea>
       </div>
     </div>
@@ -2191,7 +2234,8 @@ ${equipmentBanner}${empty}${tableHtml}
         <div><label>Customer</label><input id="bm-name"></div>
         <div><label>Mobile</label><input id="bm-mobile"></div>
       </div>
-      <div class="bm-group"><label>Notes (goes to Calendar description)</label><textarea id="bm-event-notes" oninput="syncNotes('details')"></textarea></div>
+      <div class="bm-group"><label>🤖 AI notes (customer context, usually AI-written)</label><textarea id="bm-ai-notes" placeholder="e.g. Gate code 8989. Dog in yard. Leave key with neighbour."></textarea></div>
+      <div class="bm-group"><label>📌 Notes (your own records — AI never touches this)</label><textarea id="bm-event-notes" placeholder="e.g. Quoted $750 for pipes. Needs follow-up next month." oninput="syncNotes('details')"></textarea></div>
     </div>
 
     <div class="bm-actions">
@@ -2613,6 +2657,57 @@ ${metas.length === 0 ? `
   return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8' } });
 }
 
+async function migrateAiNotesHandler(env) {
+  const cfg = config(env);
+  const cal = await calendarUrl(env);
+  const now = Date.now();
+  // Pull a wide window (2 years back, 1 year forward) — covers everything Andy
+  // has ever created. Not suitable for deeply historical data but matches the
+  // Worker's other calendar queries.
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><d:getetag/><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(now - 730 * 864e5)}" end="${utcStamp(now + 400 * 864e5)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+  let seen = 0, migrated = 0, alreadyMigrated = 0, noNotes = 0, errors = 0;
+  const errorSummaries = [];
+  for (const resp of xmlAll(r.text, 'response')) {
+    const ics = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!ics.includes('BEGIN:VEVENT')) continue;
+    seen++;
+    const href = new URL(xmlText(xmlOne(resp, 'href')), cal).href;
+    const etag = xmlText(xmlOne(resp, 'getetag')) || null;
+    const parsed = parseEvent(ics, cfg.tz);
+    const desc = parsed.description || '';
+    if (/^AI notes:/im.test(desc)) { alreadyMigrated++; continue; }
+    if (!/^Notes:/im.test(desc)) { noNotes++; continue; }
+    // Rename the single Notes: line to AI notes:
+    const newDesc = desc.replace(/^Notes:/im, 'AI notes:');
+    const changes = {
+      SEQUENCE: [`SEQUENCE:${(parsed.sequence || 0) + 1}`],
+      DTSTAMP: [`DTSTAMP:${utcStamp(Date.now())}`],
+      'LAST-MODIFIED': [`LAST-MODIFIED:${utcStamp(Date.now())}`],
+      DESCRIPTION: [`DESCRIPTION:${icsEsc(newDesc)}`],
+    };
+    try {
+      await dav(env, 'PUT', href, {
+        body: editEvent(ics, changes),
+        headers: etag ? { 'if-match': etag } : {},
+      });
+      migrated++;
+    } catch (e) {
+      errors++;
+      if (errorSummaries.length < 5) errorSummaries.push(`${parsed.uid}: ${e.message || e}`);
+    }
+  }
+  return jsonResponse({
+    seen, migrated, alreadyMigrated, noNotes, errors,
+    errorSamples: errorSummaries,
+  });
+}
+
 async function bookingEditHandler(req, url, env) {
   try {
     return await bookingEditHandlerInner(req, url, env);
@@ -2662,7 +2757,12 @@ async function bookingEditHandlerInner(req, url, env) {
   };
 
   // New values (undefined = skip, '' = clear)
-  const fields = ['service', 'price', 'vehicle', 'address', 'name', 'mobile', 'notes'];
+  // 'notes' is the user's own records (goes to "Notes:" line).
+  // 'ai_notes' is the AI-extracted customer context (goes to "AI notes:" line).
+  // The two are kept separate so editing one never clobbers the other —
+  // SMS/FB AI update flows only touch ai_notes; UI Details-tab edits only
+  // touch notes (unless Andy explicitly also sets ai_notes).
+  const fields = ['service', 'price', 'vehicle', 'address', 'name', 'mobile', 'notes', 'ai_notes'];
   const newVals = {};
   for (const f of fields) {
     if (body[f] !== undefined) newVals[f] = String(body[f] || '').trim();
@@ -2674,14 +2774,13 @@ async function bookingEditHandlerInner(req, url, env) {
   }
 
   // Update description: merge in any changed field as a `Field: value` line
-  if (newVals.service !== undefined || newVals.price !== undefined ||
-      newVals.vehicle !== undefined || newVals.address !== undefined ||
-      newVals.mobile !== undefined || newVals.notes !== undefined ||
-      newVals.name !== undefined) {
+  if (Object.keys(newVals).length > 0) {
     const desc = (target.description || '').split('\n');
     const updateLine = (field, label) => {
       if (newVals[field] === undefined) return;
-      const re = new RegExp('^' + label + ':\\s*', 'i');
+      // Exact label match — 'Notes:' vs 'AI notes:' don't overlap because
+      // of the leading anchor + exact prefix text.
+      const re = new RegExp('^' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ':\\s*', 'i');
       const idx = desc.findIndex(l => re.test(l));
       const line = newVals[field] ? `${label}: ${newVals[field]}` : '';
       if (idx >= 0) {
@@ -2696,6 +2795,7 @@ async function bookingEditHandlerInner(req, url, env) {
     updateLine('address', 'Address');
     updateLine('mobile', 'Mobile');
     updateLine('notes', 'Notes');
+    updateLine('ai_notes', 'AI notes');
     updateLine('name', 'Name');
     changes.DESCRIPTION = [`DESCRIPTION:${icsEsc(desc.filter(Boolean).join('\n'))}`];
   }

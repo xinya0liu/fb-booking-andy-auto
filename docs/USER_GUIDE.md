@@ -304,9 +304,15 @@ Save 后行末 Mark 列会出现 badge：`✓ $155 Cash` / `◐ $50 Partial` / `
 ### 📝 Details（改预约字段）
 
 同一个 modal 第二个 tab。可改：
-- Service / Price / Vehicle / Address / Customer / Mobile / Event notes
+- Service / Price / Vehicle / Address / Customer / Mobile
+- **🤖 AI notes**：AI 从对话抓的客户上下文（门禁码、车坏哪、停车说明等）。可改但一般不动
+- **📌 Notes**：你自己的工作记录（quoted $X、需跟进、客户欠钱）。**AI 永远不碰这个字段**，发 `Booking updated` 时也不会覆盖
 
 写入 iCloud Calendar 事件本身，所有设备同步。**不改时间/日期**（改时间请在 Calendar app 里改，或发 `Booking updated`）。**不通知客户**。
+
+**打印页显示规则：**
+- 屏幕：两种 notes 都显示，📌 深色突出，🤖 灰色淡化
+- 打印纸：**只印 📌 Notes**（AI notes 不印，省空间）
 
 ### 页面上的汇总
 
