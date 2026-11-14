@@ -16,7 +16,11 @@ CREATE TABLE IF NOT EXISTS vehicles (
   refrigerant TEXT    NOT NULL,
   charge_g    INTEGER NOT NULL,
   notes       TEXT    NOT NULL DEFAULT '',
-  updated_at  INTEGER NOT NULL
+  updated_at  INTEGER NOT NULL,
+  -- Data origin: 'manual' (Andy's own edit, highest trust),
+  -- 'nissens' (Nissens aftermarket DB), 'cooldrive' (CoolDrive GasBook 2014).
+  -- Auto-quoting prefers in this order.
+  source      TEXT    NOT NULL DEFAULT 'cooldrive'
 );
 
 CREATE INDEX IF NOT EXISTS idx_vehicles_make_model

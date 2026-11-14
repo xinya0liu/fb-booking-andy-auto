@@ -353,6 +353,18 @@ Done 52 · Partial 4 · No-show 2 · Cancelled 1
 
 ## 车型冷媒数据库（`/vehicles`）
 
+**数据来源（Src 列）：**
+
+| 标签 | 来源 | 优先级 |
+|---|---|---|
+| **M** 绿色 | Andy 手动加/改的 | 最高 |
+| **N** 蓝色 | Nissens AC Refrigerant DB（3309 条）| 中 |
+| **C** 灰色 | CoolDrive GasBook 2014（1979 条）| 低 |
+
+**查询优先级：** 同一辆车多个数据源都有时，自动报价会按 M > N > C 的顺序挑一条当最终值。你在管理页手动改任何条目，会自动变成 M（固化你的判断）。
+
+
+
 打开 `https://<worker 网址>/vehicles?secret=<VERIFY_TOKEN>`。
 
 **用途**：快速查某辆车需要多少冷媒、成本是多少。1979 条数据来自 CoolDrive GasBook 2014，67 个品牌。

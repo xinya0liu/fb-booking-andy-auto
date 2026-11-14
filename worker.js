@@ -2755,6 +2755,12 @@ function vehiclesAdminPage(env, origin) {
   td.actions { white-space: nowrap; text-align: right; }
   td.actions button { font-size: 0.78em; padding: 3px 8px; margin-left: 4px; border-radius: 4px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
   td.actions button.del { color: #c22; border-color: #e5a; }
+  /* Source badge: M = Andy manual, N = Nissens import, C = CoolDrive GasBook import */
+  td.src { padding: 7px 6px; }
+  td.src span { display: inline-block; width: 18px; text-align: center; border-radius: 3px; font-size: 0.72em; font-weight: bold; padding: 1px 0; }
+  td.src .src-manual    { background: #2a7a2a; color: #fff; }
+  td.src .src-nissens   { background: #e8f0ff; color: #1850a0; border: 1px solid #a0b8e0; }
+  td.src .src-cooldrive { background: #f5f5f5; color: #666; border: 1px solid #ccc; }
   .empty { color: #888; font-style: italic; padding: 24px; text-align: center; }
   .msg { padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 0.9em; }
   .msg.err { background: #fee; color: #a00; border: 1px solid #f99; }
@@ -2903,11 +2909,17 @@ function render() {
     tbl.innerHTML = '<div class="empty">No vehicles yet. Click + Add vehicle to start.</div>';
     return;
   }
+  const srcBadge = s => {
+    const label = { manual: 'M', nissens: 'N', cooldrive: 'C' }[s] || '?';
+    const cls = 'src-' + (s || 'unknown');
+    return \`<span class="\${cls}" title="\${s}">\${label}</span>\`;
+  };
   const rows = currentRows.map(v => {
     // year_end === 2100 is the sentinel for "open-ended / still in production"
     const years = v.year_end >= 2100 ? v.year_start + '+'
       : (v.year_start === v.year_end ? v.year_start : v.year_start + '-' + v.year_end);
     return \`<tr>
+      <td class="src">\${srcBadge(v.source)}</td>
       <td><strong>\${esc(v.make)}</strong></td>
       <td>\${esc(v.model)}</td>
       <td>\${esc(v.variant)}</td>
@@ -2923,7 +2935,7 @@ function render() {
     </tr>\`;
   }).join('');
   tbl.innerHTML = \`<table><thead><tr>
-    <th>Make</th><th>Model</th><th>Variant</th><th>Years</th><th>Refrigerant</th><th>Charge</th><th>Cost</th><th>Notes</th><th></th>
+    <th>Src</th><th>Make</th><th>Model</th><th>Variant</th><th>Years</th><th>Refrigerant</th><th>Charge</th><th>Cost</th><th>Notes</th><th></th>
   </tr></thead><tbody>\${rows}</tbody></table>\`;
 }
 function openAdd() {
@@ -3036,8 +3048,8 @@ async function vehiclesApi(req, env) {
     const v = normalizeVehicle(body);
     const now = Math.floor(Date.now() / 1000);
     const { meta } = await env.DB.prepare(
-      `INSERT INTO vehicles (make, model, year_start, year_end, variant, refrigerant, charge_g, notes, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO vehicles (make, model, year_start, year_end, variant, refrigerant, charge_g, notes, updated_at, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual')`
     ).bind(v.make, v.model, v.year_start, v.year_end, v.variant, v.refrigerant, v.charge_g, v.notes, now).run();
     return jsonResponse({ id: meta.last_row_id, ok: true });
   }
@@ -3049,8 +3061,10 @@ async function vehiclesApi(req, env) {
     if (errors.length) return jsonResponse({ error: errors.join('; ') }, 400);
     const v = normalizeVehicle(body);
     const now = Math.floor(Date.now() / 1000);
+    // Admin-initiated edits bump the row to 'manual' source — Andy's edit
+    // is more trustworthy than the imported data it overwrites.
     await env.DB.prepare(
-      `UPDATE vehicles SET make=?, model=?, year_start=?, year_end=?, variant=?, refrigerant=?, charge_g=?, notes=?, updated_at=?
+      `UPDATE vehicles SET make=?, model=?, year_start=?, year_end=?, variant=?, refrigerant=?, charge_g=?, notes=?, updated_at=?, source='manual'
        WHERE id=?`
     ).bind(v.make, v.model, v.year_start, v.year_end, v.variant, v.refrigerant, v.charge_g, v.notes, now, Number(id)).run();
     return jsonResponse({ ok: true });
@@ -3105,13 +3119,21 @@ async function vehicleLookup(params, env) {
   if (!make || !model || !Number.isInteger(year)) {
     return jsonResponse({ error: 'make, model, year required' }, 400);
   }
-  // Prefer variant match, fall back to the generic (empty-variant) entry.
+  // Priority:
+  //  1. source: manual > nissens > cooldrive
+  //  2. variant: exact match > empty (catch-all) > other
+  //  3. newest year_start first
   const { results } = await env.DB.prepare(
     `SELECT * FROM vehicles
        WHERE make = ? COLLATE NOCASE
          AND model = ? COLLATE NOCASE
          AND ? BETWEEN year_start AND year_end
-       ORDER BY CASE WHEN variant = ? COLLATE NOCASE THEN 0
+       ORDER BY CASE source
+                  WHEN 'manual'    THEN 0
+                  WHEN 'nissens'   THEN 1
+                  WHEN 'cooldrive' THEN 2
+                  ELSE 3 END,
+                CASE WHEN variant = ? COLLATE NOCASE THEN 0
                      WHEN variant = ''                 THEN 1
                      ELSE 2 END,
                 year_start DESC`

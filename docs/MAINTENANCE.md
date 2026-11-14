@@ -190,6 +190,14 @@ npx wrangler d1 execute andy-auto-db --remote --command "SELECT sql FROM sqlite_
 npx wrangler d1 execute andy-auto-db --remote --command "SELECT COUNT(*) FROM vehicles;"
 npx wrangler d1 execute andy-auto-db --remote --command "SELECT make, COUNT(*) FROM vehicles GROUP BY make ORDER BY 2 DESC LIMIT 10;"
 
+# Source 分布（Andy 手动 M / Nissens N / CoolDrive C）
+npx wrangler d1 execute andy-auto-db --remote --command "SELECT source, COUNT(*) FROM vehicles GROUP BY source;"
+
+# 重新导入某一个 source（不影响其他）
+npx wrangler d1 execute andy-auto-db --remote --command "DELETE FROM vehicles WHERE source = 'nissens';"
+python3 scripts/parse_nissens.py sql > /tmp/nissens_import.sql
+npx wrangler d1 execute andy-auto-db --remote --file=/tmp/nissens_import.sql
+
 # Phase 1 CRM 表：工单标记 + 客户
 npx wrangler d1 execute andy-auto-db --remote --command "SELECT COUNT(*) FROM bookings_meta;"
 npx wrangler d1 execute andy-auto-db --remote --command "SELECT status, COUNT(*), SUM(actual_amount) FROM bookings_meta GROUP BY status;"
