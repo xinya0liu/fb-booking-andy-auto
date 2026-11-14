@@ -198,6 +198,11 @@ npx wrangler d1 execute andy-auto-db --remote --command "DELETE FROM vehicles WH
 python3 scripts/parse_nissens.py sql > /tmp/nissens_import.sql
 npx wrangler d1 execute andy-auto-db --remote --file=/tmp/nissens_import.sql
 
+# 同样：hychill
+npx wrangler d1 execute andy-auto-db --remote --command "DELETE FROM vehicles WHERE source = 'hychill';"
+python3 scripts/parse_hychill.py sql > /tmp/hychill_import.sql
+npx wrangler d1 execute andy-auto-db --remote --file=/tmp/hychill_import.sql
+
 # Phase 1 CRM 表：工单标记 + 客户
 npx wrangler d1 execute andy-auto-db --remote --command "SELECT COUNT(*) FROM bookings_meta;"
 npx wrangler d1 execute andy-auto-db --remote --command "SELECT status, COUNT(*), SUM(actual_amount) FROM bookings_meta GROUP BY status;"

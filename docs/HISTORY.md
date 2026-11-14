@@ -171,6 +171,7 @@ AI 的 prompt 已经告诉它"不要带 QLD/Australia/邮编"，但模型偶尔�
 | 2026-11-13 | Phase 1 修 bug：（1）Mixed 支付加 `cash_portion` + `payid_portion` 两个列，选 Mixed 时弹两个输入框分别填，汇总自动拆进 Cash/PayID 总计；（2）`/bookings/edit` 之前用 iCloud `text-match` prop-filter 查 UID，iCloud 返回 412——改用拉 ±400 天窗口在 Worker 里 UID 匹配 |
 | 2026-11-14 | 修 GasBook 导入 parser：之前"pending_model 覆盖当前 model"的 merge 逻辑把真实车型（如 Santa Fe SM）写进 notes，用 `Dual A/C` / `Includes Turbo` 等变体描述当 model。48 条 `Dual A/C` + ~140 条其他 mislabel 全部复位为正确车型 + variant/notes。重新 parse 后 import，保留了手动添加的 4 条。顺带修了 `gen_sql.py` 从 `/tmp/parse_gasbook.py` 导入的 bug（应从 `scripts/`）|
 | 2026-11-14 | 加第二个车型数据源 Nissens AC Refrigerant DB（3309 条，比 GasBook 更新也更详细）。schema 加 `source` 列标数据来源（`manual` / `nissens` / `cooldrive`），`/vehicle-lookup` 按 manual > nissens > cooldrive 优先级排序；admin 页行首加 M/N/C 彩色 badge；admin POST/PUT 自动把 source 设成 'manual' 固化 Andy 的判断。新增 `scripts/parse_nissens.py` 解析 CSV（处理欧式小数、月.年、范围、RHD 变体、斜杠备选、R123yf 拼写错误、R744 等不支持的冷媒跳过）|
+| 2026-11-14 | 加第三个数据源 Hychill（澳洲本地，9489 条，覆盖最广且带 variant 代号如 J10/KE/8K5）。lookup 优先级更新为 manual > nissens > hychill > cooldrive；admin 加橙色 H badge。跳过 R12/Minus30 老车（1566 条）和 1729 条农业/工业设备（无年份）。新增 `scripts/parse_hychill.py`。总 DB 条数到 **14781**|
 
 ## 未来可以考虑的方向
 

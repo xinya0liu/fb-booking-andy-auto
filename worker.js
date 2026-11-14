@@ -2760,6 +2760,7 @@ function vehiclesAdminPage(env, origin) {
   td.src span { display: inline-block; width: 18px; text-align: center; border-radius: 3px; font-size: 0.72em; font-weight: bold; padding: 1px 0; }
   td.src .src-manual    { background: #2a7a2a; color: #fff; }
   td.src .src-nissens   { background: #e8f0ff; color: #1850a0; border: 1px solid #a0b8e0; }
+  td.src .src-hychill   { background: #fff4e0; color: #a05a00; border: 1px solid #e0b870; }
   td.src .src-cooldrive { background: #f5f5f5; color: #666; border: 1px solid #ccc; }
   .empty { color: #888; font-style: italic; padding: 24px; text-align: center; }
   .msg { padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 0.9em; }
@@ -2910,7 +2911,7 @@ function render() {
     return;
   }
   const srcBadge = s => {
-    const label = { manual: 'M', nissens: 'N', cooldrive: 'C' }[s] || '?';
+    const label = { manual: 'M', nissens: 'N', hychill: 'H', cooldrive: 'C' }[s] || '?';
     const cls = 'src-' + (s || 'unknown');
     return \`<span class="\${cls}" title="\${s}">\${label}</span>\`;
   };
@@ -3131,8 +3132,9 @@ async function vehicleLookup(params, env) {
        ORDER BY CASE source
                   WHEN 'manual'    THEN 0
                   WHEN 'nissens'   THEN 1
-                  WHEN 'cooldrive' THEN 2
-                  ELSE 3 END,
+                  WHEN 'hychill'   THEN 2
+                  WHEN 'cooldrive' THEN 3
+                  ELSE 4 END,
                 CASE WHEN variant = ? COLLATE NOCASE THEN 0
                      WHEN variant = ''                 THEN 1
                      ELSE 2 END,
