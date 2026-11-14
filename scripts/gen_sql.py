@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Convert parsed GasBook rows to D1 INSERT statements."""
-import sys, re, time
-sys.path.insert(0, '/tmp')
+import sys, re, time, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from parse_gasbook import parse_all
 
 CURRENT_YEAR = 2026

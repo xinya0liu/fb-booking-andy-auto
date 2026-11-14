@@ -275,7 +275,7 @@ bookings_meta (
   - Haynes Online / Autodata 订阅
   - 客人上门前要 AC 标签照片
   - 做完一单新车型 → 顺手录进 `/vehicles`
-- [ ] **Hyundai 数据被解析器搞砸** —— GasBook 原 PDF 里 "Dual A/C" 是 Hyundai 多个 model 的变体选项，但 parser 把 "Dual A/C" 当成 model 名字存成 48 条。要手动清理或重跑 parser 把它当 variant。类似问题可能出现在其他品牌。
+- [x] **~~Hyundai 数据被解析器搞砸~~** （2026-11-14 修复）—— parser 的 "pending_model 覆盖当前 model" 逻辑错误，把真实车型（如 Santa Fe SM）塞进 notes 字段，用 "Dual A/C" 等变体描述当 model。修 parser 后重新 import，48 条 Dual A/C + ~140 条其他 mislabel（Includes Turbo / MF Condenser / Denso Compressor 等）全部复位到正确车型的 variant/notes。只剩 2 条 BMW condenser 变体是边界情况。
 
 ### 备选 / 低优先（记下来但可能不做）
 

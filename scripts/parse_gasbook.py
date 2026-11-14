@@ -80,32 +80,38 @@ def extract_page(page):
 def parse_all():
     results = []
     current_make = None
-    pending_model = None  # for multi-line entries
+    pending_model = None  # last row with model text but no years/charge
     with pdfplumber.open(PDF) as pdf:
         for pnum in range(7, 65):
             page = pdf.pages[pnum - 1]
             for r in extract_page(page):
+                # Known make header line
                 if r['model'] in KNOWN_MAKES and not r['years'] and not r['charge']:
                     current_make = r['model']
                     pending_model = None
                     continue
+                # Row with no years AND no charge → could be a multi-line model
+                # continuation. Only remember it if it actually looks like a
+                # vehicle name (not a one-liner notes like "Dual A/C").
                 if not r['years'] and not r['charge']:
-                    # "no years/charge" row that's not a make = multi-line model header
                     if r['model'] and len(r['model']) < 80:
                         pending_model = r['model']
                     continue
+                # Must have both years and charge to count as a data row
                 if not r['years'] or not r['charge']:
                     continue
-                # If model empty and we have a pending model from prior row, use it
+                # Trust the row's own model when present. The pending_model
+                # only applies to fill in an empty model column. We do NOT
+                # demote the current row's model to a variant — that
+                # overwrote valid model names like 'Santa Fe, SM' with
+                # pending headers like 'Dual A/C'.
                 effective_model = r['model']
                 effective_notes = r['notes']
-                if pending_model:
-                    if not effective_model:
-                        effective_model = pending_model
-                    else:
-                        # pending_model is the group header, current model is a sub-variant → pack into notes
-                        effective_notes = (effective_model + (' · ' + effective_notes if effective_notes else '')).strip()
-                        effective_model = pending_model
+                if not effective_model and pending_model:
+                    effective_model = pending_model
+                # Consume pending_model once used (or once we passed it without
+                # needing it) so it doesn't leak to later rows.
+                pending_model = None
                 if effective_model and current_make:
                     results.append({
                         'make': current_make,
