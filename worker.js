@@ -1789,6 +1789,11 @@ async function printPage(env, origin, dateParam = '') {
   #booking-modal-box .bm-group label { display:block; font-size:0.78em; color:#666; margin-bottom:4px; }
   #booking-modal-box .bm-group input, #booking-modal-box .bm-group textarea { width:100%; padding:7px 9px; border:1px solid #ccc; border-radius:5px; font-size:0.95em; font-family:inherit; box-sizing:border-box; }
   #booking-modal-box .bm-group textarea { min-height: 50px; resize: vertical; }
+  #booking-modal-box .amt-wrap { display:flex; gap:4px; align-items:stretch; }
+  #booking-modal-box .amt-wrap input { flex:1; }
+  #booking-modal-box .amt-wrap .sign-btn { flex:0 0 36px; border:1px solid #bbb; background:#fafafa; cursor:pointer; border-radius:5px; font-size:1.1em; font-weight:bold; color:#555; padding:0; }
+  #booking-modal-box .amt-wrap .sign-btn:hover { background:#efefef; }
+  #booking-modal-box .amt-wrap .sign-btn:active { background:#222; color:#fff; }
   #booking-modal-box .bm-row { display:flex; gap:8px; margin-bottom:14px; }
   #booking-modal-box .bm-row > div { flex:1; }
   #booking-modal-box .bm-group-btns { display:flex; gap:6px; flex-wrap:wrap; }
@@ -2036,6 +2041,18 @@ function togglePaymentFields(method) {
   }
 }
 
+// iOS numeric keyboards hide the minus sign — this toggle flips the current
+// value so Andy can enter refunds/change without a desktop keyboard.
+function flipSign(id, cb) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const v = (el.value || '').trim();
+  if (v === '' || v === '0') { el.value = v; }
+  else if (v.startsWith('-')) el.value = v.slice(1);
+  else el.value = '-' + v;
+  if (typeof cb === 'function') cb();
+}
+
 function updateMixedTotal() {
   const c = parseFloat(document.getElementById('bm-cash-portion').value) || 0;
   const p = parseFloat(document.getElementById('bm-payid-portion').value) || 0;
@@ -2203,16 +2220,21 @@ ${equipmentBanner}${empty}${tableHtml}
       </div>
       <div class="bm-group" id="bm-amount-group">
         <label>Actual amount ($)</label>
-        <input type="number" id="bm-amount" step="0.01" inputmode="decimal">
+        <div class="amt-wrap">
+          <input type="number" id="bm-amount" step="0.01" inputmode="decimal">
+          <button type="button" class="sign-btn" onclick="flipSign('bm-amount')" title="Flip sign">±</button>
+        </div>
       </div>
       <div class="bm-group" id="bm-mixed-group" style="display:none;">
-        <label>Split: Cash + PayID ($) <span style="font-size:0.8em;color:#999;">(negative = you refunded, e.g. 150 cash + -20 PayID change)</span></label>
+        <label>Split: Cash + PayID ($) <span style="font-size:0.8em;color:#999;">(tap ± for refund, e.g. 150 cash + -20 PayID change)</span></label>
         <div class="bm-row" style="margin-bottom:0;">
-          <div>
+          <div class="amt-wrap">
             <input type="number" id="bm-cash-portion" step="0.01" inputmode="decimal" placeholder="Cash" oninput="updateMixedTotal()">
+            <button type="button" class="sign-btn" onclick="flipSign('bm-cash-portion', updateMixedTotal)" title="Flip sign">±</button>
           </div>
-          <div>
+          <div class="amt-wrap">
             <input type="number" id="bm-payid-portion" step="0.01" inputmode="decimal" placeholder="PayID" oninput="updateMixedTotal()">
+            <button type="button" class="sign-btn" onclick="flipSign('bm-payid-portion', updateMixedTotal)" title="Flip sign">±</button>
           </div>
         </div>
         <div id="bm-mixed-total" style="font-size:0.85em;color:#666;margin-top:4px;"></div>
