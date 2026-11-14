@@ -364,6 +364,8 @@ Done 52 · Partial 4 · No-show 2 · Cancelled 1
 
 **查询优先级：** 同一辆车多个数据源都有时，自动报价会按 M > N > H > C 的顺序挑一条当最终值。你在管理页手动改任何条目，会自动变成 M（固化你的判断，下次优先用）。
 
+**自动折叠：** 搜索结果里，同 Make/Model/年份/冷媒/克数都一样的多个 variant 会自动合并成一行（例如 Ford Transit 2020 的 40 个工厂代号 variant 都是 740g → 显示成一行 `20 variants`）。点一下展开看具体 variant。目的是让搜 `transit 2020` 不再刷 40 行同样的 740g。
+
 
 
 打开 `https://<worker 网址>/vehicles?secret=<VERIFY_TOKEN>`。

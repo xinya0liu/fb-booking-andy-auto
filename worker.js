@@ -2762,6 +2762,11 @@ function vehiclesAdminPage(env, origin) {
   td.src .src-nissens   { background: #e8f0ff; color: #1850a0; border: 1px solid #a0b8e0; }
   td.src .src-hychill   { background: #fff4e0; color: #a05a00; border: 1px solid #e0b870; }
   td.src .src-cooldrive { background: #f5f5f5; color: #666; border: 1px solid #ccc; }
+  tr.group-row { cursor: pointer; background: #fcfcfa; }
+  tr.group-row:hover { background: #f0f4f8; }
+  tr.group-row .group-variant { color: #777; font-style: italic; }
+  tr.expanded-child { background: #fafafa; }
+  tr.expanded-child td:first-child { border-left: 3px solid #bbb; }
   .empty { color: #888; font-style: italic; padding: 24px; text-align: center; }
   .msg { padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 0.9em; }
   .msg.err { background: #fee; color: #a00; border: 1px solid #f99; }
@@ -2904,6 +2909,7 @@ async function load() {
   currentRows = data.vehicles || [];
   render();
 }
+const expandedGroups = new Set();
 function render() {
   const tbl = document.getElementById('tbl');
   if (!currentRows.length) {
@@ -2915,8 +2921,10 @@ function render() {
     const cls = 'src-' + (s || 'unknown');
     return \`<span class="\${cls}" title="\${s}">\${label}</span>\`;
   };
-  const rows = currentRows.map(v => {
-    // year_end === 2100 is the sentinel for "open-ended / still in production"
+  // Group rows with identical (make, model, refrigerant, charge_g, year_start,
+  // year_end, source): same car + same charge → fold into one line. Variants
+  // and notes differ per row but the charge Andy quotes from is identical.
+  const buildRow = v => {
     const years = v.year_end >= 2100 ? v.year_start + '+'
       : (v.year_start === v.year_end ? v.year_start : v.year_start + '-' + v.year_end);
     return \`<tr>
@@ -2934,10 +2942,51 @@ function render() {
         <button class="del" onclick="del(\${v.id})">Delete</button>
       </td>
     </tr>\`;
-  }).join('');
+  };
+  const groups = new Map();
+  for (const v of currentRows) {
+    const key = [v.make, v.model, v.refrigerant, v.charge_g, v.year_start, v.year_end, v.source].join('§');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(v);
+  }
+  const rowsHtml = [];
+  for (const [key, items] of groups) {
+    if (items.length === 1) {
+      rowsHtml.push(buildRow(items[0]));
+      continue;
+    }
+    // Collapsed row: summary line + optional expanded rows beneath
+    const first = items[0];
+    const years = first.year_end >= 2100 ? first.year_start + '+'
+      : (first.year_start === first.year_end ? first.year_start : first.year_start + '-' + first.year_end);
+    const expanded = expandedGroups.has(key);
+    const toggleIcon = expanded ? '▾' : '▸';
+    const esc_key = key.replace(/'/g, "\\\\'");
+    rowsHtml.push(\`<tr class="group-row" onclick="toggleGroup('\${esc_key}')">
+      <td class="src">\${srcBadge(first.source)}</td>
+      <td><strong>\${esc(first.make)}</strong></td>
+      <td>\${esc(first.model)}</td>
+      <td class="group-variant">\${toggleIcon} <em>\${items.length} variants</em></td>
+      <td>\${years}</td>
+      <td>\${esc(first.refrigerant)}</td>
+      <td>\${first.charge_g}g</td>
+      <td class="cost">\${costCell(first)}</td>
+      <td></td>
+      <td class="actions"></td>
+    </tr>\`);
+    if (expanded) {
+      for (const v of items) rowsHtml.push(buildRow(v).replace('<tr>', '<tr class="expanded-child">'));
+    }
+  }
   tbl.innerHTML = \`<table><thead><tr>
     <th>Src</th><th>Make</th><th>Model</th><th>Variant</th><th>Years</th><th>Refrigerant</th><th>Charge</th><th>Cost</th><th>Notes</th><th></th>
-  </tr></thead><tbody>\${rows}</tbody></table>\`;
+  </tr></thead><tbody>\${rowsHtml.join('')}</tbody></table>\`;
+}
+
+function toggleGroup(key) {
+  if (expandedGroups.has(key)) expandedGroups.delete(key);
+  else expandedGroups.add(key);
+  render();
 }
 function openAdd() {
   document.getElementById('modal-title').textContent = 'Add vehicle';
