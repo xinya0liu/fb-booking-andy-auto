@@ -175,6 +175,7 @@ AI 的 prompt 已经告诉它"不要带 QLD/Australia/邮编"，但模型偶尔�
 | 2026-11-14 | 数据清理：make 大小写统一（`Mercedes-benz` → `Mercedes-Benz` 等 4 处），model hyphen 统一（Mazda CX-5/BT-50/MX-5 等、Honda CR-V/HR-V 等、Isuzu D-Max、Nissan GT-R）；Hyundai `ix35` 小写 + `H-1` 带连字符。Admin 页加自动折叠：同 make/model/年份/冷媒/克数的多个 variant 合并成一行，点击展开（Ford Transit 2020 从 63 行 → 25 行显示）|
 | 2026-11-14 | Notes 分成两个独立字段：`AI notes:`（AI 写，客户上下文）和 `Notes:`（Andy 写，私人记录）两行都存在 Calendar description。AI prompt schema `notes` → `ai_notes`；`bookingEditHandler` 用精确前缀 regex 保证改一个不动另一个；SMS/FB 的 update flow 只写 `AI notes:`，UI 写 `Notes:`，`Booking updated` 不再覆盖 Andy 的记录。迁移 46 个老事件 `Notes:` → `AI notes:`（幂等），打印页显示 📌 Notes + 🤖 AI notes，打印纸只印 📌 省空间 |
 | 2026-11-14 | Payment 金额支持负数（退定金/找零场景）；每个金额输入框右侧加 `±` 切换按钮，解决 iOS/Android 数字键盘没有减号键的问题（Apple 的 numeric/decimal keyboard 刻意简化到 0-9 + 小数点） |
+| 2026-11-14 | SMS AI 提取再加固：当同一个线程里 Andy 发了两条 `Booking confirmed` 时，之前只擦 bot ✅ 回复的 `Time:` 行，Andy **自己** 的前一条触发消息（如 `for tonight 7:30pm`）仍在上下文里，AI 把旧时间当新时间用，触发"time came out as 14/11 Saturday 7:30pm, which is in the past"。加 `redactPriorTriggerMessages` 把早于最新触发的所有 `Us: Booking <verb>` 消息正文换成 `[past booking trigger — ignore]`；`appendTriggerMarker` 改为把最新触发消息原文**引用**给 AI，并明示其中的时间/价格/服务字段为权威 |
 
 ## 未来可以考虑的方向
 

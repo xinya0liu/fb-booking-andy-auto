@@ -32,7 +32,7 @@
 | `Facebook: couldn't read the messages` | 读不到对话：`PAGE_ACCESS_TOKEN` 失效或权限变了 | 重新生成专页访问令牌；暂时用 `Booked you in` / `Booking change` |
 | `⚠️ AI unavailable` | 同上两种情况，但你的消息里有写资料，所以已经按你写的处理 | 自己确认日历资料，必要时手动发确认给客人 |
 | `Couldn't find the booking date and time in the chat` | 对话里没有明确的时间 | 在消息后面加一行 `Time: …` 再发，或在对话里跟客人确认时间 |
-| `…which is in the past` | AI 算出的时间已经过去（通常是误读） | 在消息后面加一行 `Time: …` 再发 |
+| `…which is in the past` | AI 算出的时间已经过去（通常是误读，或同一线程里前一次预约的时间被复用了） | 在触发消息里直接写清楚时间（例如 `Booking confirmed for Camry $150 at Sunday 3pm`），或另起一行加 `Time: Sunday 3pm` 再发 |
 | `Couldn't find any change in the chat` | 发了 `Booking updated`，但 AI 看不出改了什么 | 在消息后面加上改动的行，例如 `Time: Sunday 3pm` |
 | `Confirmation NOT sent to the customer (…)` | 自动回复失败，最常见是客人超过 24 小时没发消息 | 预约已写入；复制通知里附的消息自己发 |
 | 自动回复的内容不对（价格、时间抓错） | AI 误读对话 | 在对话里跟客人讲清楚正确的资料，再发 `Booking updated`；或用 `Booking change` 手动改 |
@@ -106,7 +106,7 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
 | `printPage` + 相关 | 打印页 HTML、`splitAddress`/`normalizeAddress` 地址处理、`parseSummaryFields` 从日历标题反解析 |
 | `vehiclesAdminPage` / `vehiclesApi` / `vehicleLookup` | 车型冷媒数据库：Admin HTML、CRUD API、精确查询 API |
 | `refrigerantPricesHandler` + `loadRefrigerantPrices` | 冷媒单价 KV 读写（`refrigerant_prices` JSON blob） |
-| `trimToLastConfirmation` / `redactOldConfirmationTimes` / `appendTriggerMarker` | SMS CONFIRMED/UPDATED 前处理：清理历史 ✅ 的旧时间，但保留地址/车型；明示触发点 |
+| `trimToLastConfirmation` / `redactOldConfirmationTimes` / `redactPriorTriggerMessages` / `appendTriggerMarker` | SMS CONFIRMED/UPDATED 前处理：清理历史 ✅ 的旧时间、擦掉早于最新触发的 `Us: Booking <verb>` 正文（防止 Andy 在同一线程里发第二条确认时 AI 复用上一次的时间）；把最新触发消息原文引用给 AI 并明示其中字段为权威 |
 
 ### 网页端点
 

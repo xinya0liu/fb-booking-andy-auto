@@ -420,13 +420,71 @@ function redactOldConfirmationTimes(conversationText) {
   return out.join('\n');
 }
 
+// Verbs that indicate a trigger message Andy typed himself (the latest one is
+// the current action; any earlier ones are from past bookings).
+function triggerVerb(action) {
+  return action === 'updated' || action === 'update' ? 'updated'
+    : action === 'cancelled' || action === 'cancel' ? 'cancelled'
+    : 'confirmed';
+}
+
+function triggerRegex(action) {
+  const verb = triggerVerb(action);
+  // Match: "[ts] Us: ...booking <verb>..." — leading emoji / lowercase ok.
+  return new RegExp(`^(\\[[^\\]]+\\]\\s+Us:\\s*)(.*booking\\s+${verb}\\b.*)$`, 'i');
+}
+
+// Find the latest "Us: Booking <verb>" message body in the conversation.
+function extractLatestTrigger(conversationText, action) {
+  const re = triggerRegex(action);
+  const lines = conversationText.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = lines[i].match(re);
+    if (m) return m[2].trim();
+  }
+  return '';
+}
+
+// Replace the BODY of any earlier "Us: Booking <verb>" messages with a
+// redaction marker, keeping only the latest (current) trigger visible. Fixes
+// the case where Andy sends a second booking-confirmed in the same thread and
+// the AI picks up the inline time from the previous one.
+function redactPriorTriggerMessages(conversationText, action) {
+  const re = triggerRegex(action);
+  const lines = conversationText.split('\n');
+  const idx = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (re.test(lines[i])) idx.push(i);
+  }
+  if (idx.length <= 1) return conversationText;
+  const out = lines.slice();
+  for (const start of idx.slice(0, -1)) {
+    const m = out[start].match(re);
+    if (!m) continue;
+    out[start] = `${m[1]}[past booking trigger — ignore]`;
+    let j = start + 1;
+    while (j < out.length && !MSG_START_RE.test(out[j])) {
+      out[j] = '  [past booking content — ignore]';
+      j++;
+    }
+  }
+  return out.join('\n');
+}
+
 // Append a trigger marker so the AI knows which message is the actual
-// booking trigger, especially in long histories.
+// booking trigger, especially in long histories. Quotes the trigger body
+// verbatim so any inline time/price Andy typed there is treated as
+// authoritative — this overrides stale times in the earlier conversation.
 function appendTriggerMarker(conversationText, action) {
   const label = action === 'updated' || action === 'update' ? 'update'
     : action === 'cancelled' || action === 'cancel' ? 'cancellation'
     : 'booking';
-  return conversationText + `\n\n===\nThe LAST "Us: Booking ${action}" message above is the trigger for this ${label}. Extract details from the exchange immediately leading up to it. Older ✅ messages are from past bookings — their time is redacted, but address/vehicle may still be reused if the customer has not provided new ones.`;
+  const verb = triggerVerb(action);
+  const trigger = extractLatestTrigger(conversationText, action);
+  const head = trigger
+    ? `The trigger for this ${label} is Andy's last message:\n  "${trigger}"\nAnything explicitly written in that trigger message — time, price, service, vehicle, address — is authoritative and overrides anything in the earlier conversation.`
+    : `The LAST "Us: Booking ${verb}" message above is the trigger for this ${label}.`;
+  return conversationText + `\n\n===\n${head}\nExtract remaining details from the exchange immediately leading up to the trigger. Earlier ✅/🔄 bot replies and earlier "Booking ${verb}" messages from Andy are from PAST bookings — ignore their times entirely (address/vehicle may still be reused if the customer has not provided new ones).`;
 }
 
 async function doKeywordBooking(conversationText, phone, action, env, cfg, contactName = '') {
@@ -438,6 +496,9 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
   } else {
     textForAi = conversationText;
   }
+  // Also mask any earlier "Us: Booking <verb>" messages so a previous
+  // trigger's inline time/price can't bleed into the current extraction.
+  textForAi = redactPriorTriggerMessages(textForAi, action);
   textForAi = appendTriggerMarker(textForAi, action);
   console.log(`doKeywordBooking action=${action} phone=${phone} conv=${conversationText.length}→${textForAi.length} chars`);
   const ai = await aiFromSmsChat(textForAi, cfg, env, contactName);

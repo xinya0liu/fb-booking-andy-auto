@@ -333,6 +333,7 @@ bookings_meta (
 - [x] `trimToLastConfirmation` 修复多行 ✅ 块的 bug：原本只跳过标题行，`Time:` / `See you then!` 等后续行漏入 AI 视野
 - [x] `redactOldConfirmationTimes`：对 CONFIRMED action 把历史 ✅ 的 `Time:` 行替换成 `[past booking]`，地址/车型保留，旧时间不再干扰
 - [x] `appendTriggerMarker`：对话末尾明示"最后那条 Booking confirmed 才是触发点，旧 ✅ 的时间已被 redact"
+- [x] `redactPriorTriggerMessages`（2026-11-14）：同一线程里 Andy 发了第二条 `Booking confirmed` 时，把前一条的正文换成 `[past booking trigger — ignore]`，防止上一次的 "for tonight 7:30pm" 被 AI 当成新时间复用；`appendTriggerMarker` 也升级成把最新触发消息原文**引用**给 AI
 - [x] Prompt 加硬：contact label 永远不能作为日期/时间/地址/服务/价格/车型/手机号的来源
 - [x] `service` schema 允许多项目描述（如 `Change O-ring, replace valves and regas`），不再被压缩成 1-3 字
 - [x] `doKeywordBooking` 加日志（对话长度、AI 提取字段），失败可追溯
