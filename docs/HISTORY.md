@@ -174,6 +174,7 @@ AI 的 prompt 已经告诉它"不要带 QLD/Australia/邮编"，但模型偶尔�
 | 2026-11-14 | 加第三个数据源 Hychill（澳洲本地，9489 条，覆盖最广且带 variant 代号如 J10/KE/8K5）。lookup 优先级更新为 manual > nissens > hychill > cooldrive；admin 加橙色 H badge。跳过 R12/Minus30 老车（1566 条）和 1729 条农业/工业设备（无年份）。新增 `scripts/parse_hychill.py`。总 DB 条数到 **14781**|
 | 2026-11-14 | 数据清理：make 大小写统一（`Mercedes-benz` → `Mercedes-Benz` 等 4 处），model hyphen 统一（Mazda CX-5/BT-50/MX-5 等、Honda CR-V/HR-V 等、Isuzu D-Max、Nissan GT-R）；Hyundai `ix35` 小写 + `H-1` 带连字符。Admin 页加自动折叠：同 make/model/年份/冷媒/克数的多个 variant 合并成一行，点击展开（Ford Transit 2020 从 63 行 → 25 行显示）|
 | 2026-11-14 | Notes 分成两个独立字段：`AI notes:`（AI 写，客户上下文）和 `Notes:`（Andy 写，私人记录）两行都存在 Calendar description。AI prompt schema `notes` → `ai_notes`；`bookingEditHandler` 用精确前缀 regex 保证改一个不动另一个；SMS/FB 的 update flow 只写 `AI notes:`，UI 写 `Notes:`，`Booking updated` 不再覆盖 Andy 的记录。迁移 46 个老事件 `Notes:` → `AI notes:`（幂等），打印页显示 📌 Notes + 🤖 AI notes，打印纸只印 📌 省空间 |
+| 2026-11-14 | Payment 金额支持负数（退定金/找零场景）；每个金额输入框右侧加 `±` 切换按钮，解决 iOS/Android 数字键盘没有减号键的问题（Apple 的 numeric/decimal keyboard 刻意简化到 0-9 + 小数点） |
 
 ## 未来可以考虑的方向
 

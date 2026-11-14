@@ -291,7 +291,8 @@ Feel free to rebook anytime!
 - **Status**：✓ Done（默认）/ ◐ Partial（只做了检查）/ ✗ No-show / — Cancel
 - **Payment**：Cash / PayID / Mixed / Unpaid
   - 选 Mixed 会弹出两个输入框：Cash 和 PayID 各收了多少，下方实时显示 Total
-  - **可以填负数**（你退客户的钱）。例：客人给 $150 现金，你用 PayID 退 $20 → Cash 填 `150`，PayID 填 `-20` → 系统自动算 Collected $130
+  - **可以填负数**（你退客户的钱）。例：客人给 $150 现金，你用 PayID 退 $20 → Cash 填 `150`，PayID 填 `20`，点 PayID 旁边的 **`±`** 按钮把它变成 `-20` → 系统自动算 Collected $130
+  - **为什么有 ± 按钮？** iOS/Android 的数字键盘没有减号键（Apple 把 numeric/decimal 键盘简化到只有 0-9 + 小数点），所以在手机上输入负数的唯一办法就是先打正数再点 ± 切换符号。桌面键盘直接打 `-` 也行
 - **Actual amount ($)**：默认是原报价，可改（例如只收检查费 $50）。Mixed 情况下不填这个，系统自动用 Cash+PayID 的和
 - **Our notes**：私人备注（例如"客人车坏得没法修"）
 
