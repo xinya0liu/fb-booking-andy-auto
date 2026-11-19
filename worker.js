@@ -163,6 +163,12 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return backfillServiceDatesHandler(env);
     }
+    // JSON bookings-for-a-day endpoint — feeds the fb-booking-admin dashboard
+    // without reinventing the Calendar query. Server-to-server only (no CORS).
+    if (url.pathname === '/api/bookings' && req.method === 'GET' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return bookingsJsonHandler(env, url);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -2763,6 +2769,72 @@ ${metas.length === 0 ? `
 </body></html>`;
 
   return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8' } });
+}
+
+// JSON for a single day's bookings (+ joined meta). Used by the admin
+// dashboard (fb-booking-admin). Date param: 'today' (default) or YYYY-MM-DD.
+async function bookingsJsonHandler(env, url) {
+  const cfg = config(env);
+  const today = todayInTz(cfg.tz);
+  const dateParam = url.searchParams.get('date') || 'today';
+  let target;
+  if (dateParam === 'today') {
+    target = { y: today.y, m: today.m, d: today.d };
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+    const [y, m, d] = dateParam.split('-').map(Number);
+    target = { y, m, d };
+  } else {
+    return jsonResponse({ error: 'bad date — use "today" or YYYY-MM-DD' }, 400);
+  }
+  const events = await findTomorrowBookings(env, cfg, { target });
+  const uids = events.map(e => e.uid).filter(Boolean);
+  let metaMap = {};
+  if (uids.length && env.DB) {
+    const placeholders = uids.map(() => '?').join(',');
+    const { results } = await env.DB.prepare(
+      `SELECT * FROM bookings_meta WHERE calendar_uid IN (${placeholders})`
+    ).bind(...uids).all();
+    for (const r of results) metaMap[r.calendar_uid] = r;
+  }
+  const bookings = events.map(e => {
+    const desc = e.description || '';
+    const summaryParsed = parseSummaryFields(e.summary || '');
+    const descService = desc.match(/^Service:\s*(.+)$/im)?.[1]?.trim() || '';
+    const service = summaryParsed.service || descService || e.service || '';
+    const price = summaryParsed.price || e.price || '';
+    const vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim()
+      || summaryParsed.vehicle || e.vehicle || '';
+    const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
+    const aiNotes = desc.match(/^AI notes:\s*(.+)$/im)?.[1]?.trim() || '';
+    const descNoAi = desc.replace(/^AI notes:.*$/gim, '');
+    const userNotes = descNoAi.match(/^Notes:\s*(.+)$/im)?.[1]?.trim() || '';
+    const p = localParts(e.startMs, cfg.tz);
+    const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
+    const priceNum = parseInt(String(price).replace(/[^\d]/g, ''), 10);
+    return {
+      uid: e.uid || '',
+      psid: e.psid || '',
+      source: e.psid ? 'fb' : 'sms',
+      time: clock,
+      start_ms: e.startMs,
+      end_ms: e.endMs,
+      name: (e.name || '').trim(),
+      phone: mobile,
+      service,
+      price,
+      quoted_cents: priceNum > 0 ? priceNum * 100 : 0,
+      vehicle,
+      address: e.location || '',
+      ai_notes: aiNotes,
+      notes: userNotes,
+      meta: metaMap[e.uid] || null,
+    };
+  });
+  return jsonResponse({
+    date: `${target.y}-${pad(target.m)}-${pad(target.d)}`,
+    count: bookings.length,
+    bookings,
+  });
 }
 
 // One-off: fill service_date_ms on existing bookings_meta rows by looking up
