@@ -169,6 +169,11 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return bookingsJsonHandler(env, url);
     }
+    // Admin manual booking creation (fb-booking-admin "+ New booking" / Follow-up).
+    if (url.pathname === '/api/bookings/create' && req.method === 'POST' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return bookingsCreateHandler(req, env);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -2835,6 +2840,84 @@ async function bookingsJsonHandler(env, url) {
     count: bookings.length,
     bookings,
   });
+}
+
+// Admin-side manual booking creation. Writes an iCloud Calendar event the
+// same way the SMS flow does (`saveSmsFromAi`), minus AI extraction.
+// Required body fields: start_iso (local 'YYYY-MM-DDTHH:mm'), service, price.
+// Optional: duration_min, name, phone, vehicle, address, our_notes, parent_uid.
+async function bookingsCreateHandler(req, env) {
+  const cfg = config(env);
+  let body;
+  try { body = await req.json(); }
+  catch { return jsonResponse({ error: 'invalid JSON' }, 400); }
+
+  const startIso = String(body.start_iso || '').trim();
+  const m = startIso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{1,2}):(\d{2})$/);
+  if (!m) return jsonResponse({ error: 'start_iso must be YYYY-MM-DDTHH:mm (local Brisbane time)' }, 400);
+  const date = { y: +m[1], m: +m[2], d: +m[3] };
+  const start = { h: +m[4], min: +m[5] };
+  const durationMin = Number.isFinite(+body.duration_min) && +body.duration_min > 0
+    ? Math.min(600, +body.duration_min) : cfg.minutes;
+
+  const t = buildTimes(date, start, null, durationMin * 60000);
+
+  const name = String(body.name || '').trim();
+  const phone = String(body.phone || '').trim();
+  const service = String(body.service || '').trim();
+  const price = String(body.price || '').trim();
+  const vehicle = String(body.vehicle || '').trim();
+  const address = String(body.address || '').trim();
+  const ourNotes = String(body.our_notes || '').trim();
+  const parentUid = String(body.parent_uid || '').trim();
+
+  if (!service) return jsonResponse({ error: 'service required' }, 400);
+
+  const displayName = name || phone || 'Walk-in';
+
+  // UID: stable hash from "admin-<name>-<datetime>" so retries are idempotent.
+  // Tagged with @fb-booking so existing queries still find it.
+  const hashInput = `admin-${displayName}-${phone}-${date.y}-${pad(date.m)}-${pad(date.d)}-${pad(start.h)}${pad(start.min)}`;
+  const id = (await sha256hex(hashInput)).slice(0, 32);
+  const uid = `${id}-admin@fb-booking`;
+
+  const notesLines = ['Admin-created booking'];
+  if (parentUid) notesLines.push(`Follow-up of: ${parentUid}`);
+  notesLines.push(`Service: ${service}`);
+  if (price) notesLines.push(`Price: ${price}`);
+  notesLines.push(`Time: ${t.label}`);
+  if (address) notesLines.push(`Address: ${address}`);
+  if (phone) notesLines.push(`Mobile: ${phone}`);
+  if (vehicle) notesLines.push(`Vehicle: ${vehicle}`);
+  if (ourNotes) notesLines.push(`Notes: ${ourNotes}`);
+
+  const ics = buildEvent({
+    uid,
+    startMs: zonedToUtc(t.start, cfg.tz),
+    endMs: zonedToUtc(t.end, cfg.tz),
+    summary: buildSummary(displayName, service, price),
+    location: address,
+    description: notesLines.join('\n'),
+    url: phone ? smsLink(phone) : '',
+    x: { psid: '', name: displayName, service, price,
+         'X-VEH-MAKE': '', 'X-VEH-MODEL': '', 'X-VEH-YEAR': '', 'X-VEH-VARIANT': '' },
+  });
+
+  const cal = await calendarUrl(env);
+  try {
+    await dav(env, 'PUT', `${cal}${id}.ics`, { body: ics, headers: { 'if-none-match': '*' } });
+  } catch (e) {
+    if (e.status === 412) {
+      return jsonResponse({ error: 'A booking with these details already exists.' }, 409);
+    }
+    throw e;
+  }
+
+  await barkBooking(env, `📅 Admin booking: ${displayName}`,
+    [t.label, service, price].filter(Boolean).join(' · ') + (parentUid ? '\n(follow-up)' : ''),
+    '', t.label).catch(() => {});
+
+  return jsonResponse({ ok: true, uid, when: t.label });
 }
 
 // One-off: fill service_date_ms on existing bookings_meta rows by looking up
