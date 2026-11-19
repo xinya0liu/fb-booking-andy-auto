@@ -157,6 +157,12 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return migrateAiNotesHandler(env);
     }
+    // One-off backfill: set bookings_meta.service_date_ms from Calendar DTSTART
+    // for rows created before that column existed. Idempotent.
+    if (url.pathname === '/admin/backfill-service-dates' && req.method === 'POST' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return backfillServiceDatesHandler(env);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -1672,6 +1678,9 @@ async function printPage(env, origin, dateParam = '') {
       notes: userNotes,
       quoted_cents: priceNum > 0 ? priceNum * 100 : 0,
       time: clock,
+      // DTSTART of the Calendar event, for /report to group by service date
+      // (not by paid_at — which is just when Andy clicked the mark modal).
+      service_date_ms: e.startMs || null,
     });
     // Suggested gas from vehicles DB (only when AI tagged structured fields)
     const gasSug = await suggestGasFor(env, {
@@ -2176,6 +2185,10 @@ async function saveBookingModal() {
       phone: b.phone || '',
       psid: b.psid || '',
       customer_name: b.name || '',
+      // So the /report groups by service date, not by the moment this mark
+      // was clicked (bulk-marking backlog would otherwise dump every single
+      // row into today's row).
+      service_date_ms: b.service_date_ms || null,
     };
     if (method === 'mixed') {
       markBody.cash_portion = document.getElementById('bm-cash-portion').value;
@@ -2530,10 +2543,13 @@ async function bookingsMetaHandlerInner(req, url, env) {
     const psid = (body.psid || '').trim() || null;
     const notes = String(body.our_notes || '').trim();
     const paidAt = (status === 'done' || status === 'partial') ? now : null;
+    const serviceDateMs = Number.isFinite(+body.service_date_ms) && +body.service_date_ms > 0
+      ? +body.service_date_ms
+      : null;
 
     await env.DB.prepare(
-      `INSERT INTO bookings_meta (calendar_uid, phone, psid, status, actual_amount, payment_method, cash_portion, payid_portion, paid_at, our_notes, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO bookings_meta (calendar_uid, phone, psid, status, actual_amount, payment_method, cash_portion, payid_portion, paid_at, service_date_ms, our_notes, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(calendar_uid) DO UPDATE SET
          phone = COALESCE(excluded.phone, phone),
          psid  = COALESCE(excluded.psid, psid),
@@ -2543,9 +2559,10 @@ async function bookingsMetaHandlerInner(req, url, env) {
          cash_portion = excluded.cash_portion,
          payid_portion = excluded.payid_portion,
          paid_at = excluded.paid_at,
+         service_date_ms = COALESCE(excluded.service_date_ms, bookings_meta.service_date_ms),
          our_notes = excluded.our_notes,
          updated_at = excluded.updated_at`
-    ).bind(uid, phone, psid, status, amountCents, method, cashPortion, payidPortion, paidAt, notes, now).run();
+    ).bind(uid, phone, psid, status, amountCents, method, cashPortion, payidPortion, paidAt, serviceDateMs, notes, now).run();
 
     // Side effect: upsert customer and bump totals
     if (phone || psid) {
@@ -2597,13 +2614,19 @@ async function reportPage(req, url, env) {
     label = `${today.y}-${pad(today.m)}`;
   }
 
-  // Pull all bookings_meta rows in the time window (by paid_at).
+  // Pull all bookings_meta rows whose SERVICE DATE falls in the window.
+  // Older rows (pre service_date_ms column) fall back to paid_at. The column
+  // holds milliseconds; the window boundaries are in seconds, so compare both
+  // on the same ms scale.
+  const startMs = startSec * 1000;
+  const endMs = endSec * 1000;
   const { results: metas } = await env.DB.prepare(
     `SELECT * FROM bookings_meta
        WHERE paid_at IS NOT NULL
-         AND paid_at >= ? AND paid_at < ?
-       ORDER BY paid_at ASC`
-  ).bind(startSec, endSec).all();
+         AND COALESCE(service_date_ms, paid_at * 1000) >= ?
+         AND COALESCE(service_date_ms, paid_at * 1000) <  ?
+       ORDER BY COALESCE(service_date_ms, paid_at * 1000) ASC`
+  ).bind(startMs, endMs).all();
 
   // Aggregations
   let collected = 0, quoted = 0, cash = 0, payid = 0, mixed = 0, unpaidAmt = 0;
@@ -2627,8 +2650,10 @@ async function reportPage(req, url, env) {
       byMethod.mixed++;
     }
     else if (r.payment_method === 'unpaid') { unpaidAmt += amt; byMethod.unpaid++; countUnpaid++; }
-    // Group by local day
-    const dt = new Date(r.paid_at * 1000);
+    // Group by service date (when the car was actually serviced), not paid_at
+    // (which is just when the mark modal was clicked). Fall back to paid_at
+    // for rows created before the service_date_ms column existed.
+    const dt = new Date(r.service_date_ms || r.paid_at * 1000);
     const localStr = new Date(dt.toLocaleString('en-US', { timeZone: cfg.tz }));
     const dayKey = `${localStr.getFullYear()}-${pad(localStr.getMonth()+1)}-${pad(localStr.getDate())}`;
     const bucket = byDay.get(dayKey) || { count: 0, collected: 0, cash: 0, payid: 0, unpaid: 0 };
@@ -2738,6 +2763,50 @@ ${metas.length === 0 ? `
 </body></html>`;
 
   return new Response(html, { headers: { 'Content-Type': 'text/html;charset=utf-8' } });
+}
+
+// One-off: fill service_date_ms on existing bookings_meta rows by looking up
+// each UID's DTSTART in iCloud. Idempotent — only touches rows where
+// service_date_ms is NULL. Safe to re-run.
+async function backfillServiceDatesHandler(env) {
+  if (!env.DB) return jsonResponse({ error: 'D1 binding missing' }, 500);
+  const { results: needs } = await env.DB.prepare(
+    `SELECT calendar_uid FROM bookings_meta WHERE service_date_ms IS NULL AND paid_at IS NOT NULL`
+  ).all();
+  if (!needs.length) return jsonResponse({ ok: true, needed: 0, updated: 0 });
+
+  const uidSet = new Set(needs.map(r => r.calendar_uid));
+  const cal = await calendarUrl(env);
+  const now = Date.now();
+  // Wide window covers everything Andy has booked (2 yrs back, 1 yr forward).
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(now - 730 * 864e5)}" end="${utcStamp(now + 400 * 864e5)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+
+  const cfg = config(env);
+  const uidToStartMs = new Map();
+  for (const resp of xmlAll(r.text, 'response')) {
+    const ics = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!ics.includes('BEGIN:VEVENT')) continue;
+    const e = parseEvent(ics, cfg.tz);
+    if (!e.uid || !e.startMs || !uidSet.has(e.uid)) continue;
+    uidToStartMs.set(e.uid, e.startMs);
+  }
+
+  let updated = 0, missing = 0;
+  for (const uid of uidSet) {
+    const startMs = uidToStartMs.get(uid);
+    if (!startMs) { missing++; continue; }
+    await env.DB.prepare(
+      `UPDATE bookings_meta SET service_date_ms = ? WHERE calendar_uid = ? AND service_date_ms IS NULL`
+    ).bind(startMs, uid).run();
+    updated++;
+  }
+  return jsonResponse({ ok: true, needed: needs.length, updated, missing_in_calendar: missing });
 }
 
 async function migrateAiNotesHandler(env) {

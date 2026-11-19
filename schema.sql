@@ -58,9 +58,11 @@ CREATE TABLE IF NOT EXISTS bookings_meta (
   payment_method  TEXT,              -- cash / payid / mixed / unpaid
   cash_portion    INTEGER,           -- cents, only when payment_method='mixed'
   payid_portion   INTEGER,           -- cents, only when payment_method='mixed'
-  paid_at         INTEGER,
+  paid_at         INTEGER,            -- unix seconds; WHEN Andy clicked the mark modal
+  service_date_ms INTEGER,            -- DTSTART of the Calendar event (unix ms); WHEN the service happened. Used by /report so bulk backfill doesn't collapse revenue onto the day Andy clicked.
   our_notes       TEXT NOT NULL DEFAULT '',
   updated_at      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_bookings_meta_phone ON bookings_meta(phone);
 CREATE INDEX IF NOT EXISTS idx_bookings_meta_paid_at ON bookings_meta(paid_at);
+CREATE INDEX IF NOT EXISTS idx_bookings_meta_service_date ON bookings_meta(service_date_ms);
