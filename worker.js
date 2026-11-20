@@ -174,6 +174,11 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return bookingsCreateHandler(req, env);
     }
+    // Customers aggregate (admin dashboard). No ?phone → list; with ?phone → detail.
+    if (url.pathname === '/api/customers' && req.method === 'GET' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return customersHandler(env, url);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -2840,6 +2845,154 @@ async function bookingsJsonHandler(env, url) {
     count: bookings.length,
     bookings,
   });
+}
+
+// Normalise an AU mobile string to a canonical key so "+61478701289",
+// "0478 701 289", "0478-701-289" all match.
+function normalisePhone(raw) {
+  const digits = String(raw || '').replace(/\D+/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('61') && digits.length >= 11) return '0' + digits.slice(2);
+  return digits;
+}
+
+// Pull all VEVENTs in a date window (default ~1 year back, 400d forward), parse
+// into booking-shape objects, join bookings_meta by UID. Used by customers list
+// and customer detail. Returns one array of enriched bookings.
+async function fetchBookingsInWindow(env, cfg, daysBack = 365, daysForward = 400) {
+  const cal = await calendarUrl(env);
+  const now = Date.now();
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(now - daysBack * 864e5)}" end="${utcStamp(now + daysForward * 864e5)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+  const events = [];
+  for (const resp of xmlAll(r.text, 'response')) {
+    const ics = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!ics.includes('BEGIN:VEVENT')) continue;
+    const e = parseEvent(ics, cfg.tz);
+    if (!e.startMs) continue;
+    events.push(e);
+  }
+  // Join with bookings_meta
+  const uids = events.map(e => e.uid).filter(Boolean);
+  const metaMap = {};
+  if (uids.length && env.DB) {
+    const chunks = [];
+    for (let i = 0; i < uids.length; i += 90) chunks.push(uids.slice(i, i + 90));
+    for (const chunk of chunks) {
+      const ph = chunk.map(() => '?').join(',');
+      const { results } = await env.DB.prepare(
+        `SELECT * FROM bookings_meta WHERE calendar_uid IN (${ph})`
+      ).bind(...chunk).all();
+      for (const r of results) metaMap[r.calendar_uid] = r;
+    }
+  }
+  return events.map(e => {
+    const desc = e.description || '';
+    const summaryParsed = parseSummaryFields(e.summary || '');
+    const descService = desc.match(/^Service:\s*(.+)$/im)?.[1]?.trim() || '';
+    const service = summaryParsed.service || descService || e.service || '';
+    const price = summaryParsed.price || e.price || '';
+    const vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim()
+      || summaryParsed.vehicle || e.vehicle || '';
+    const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
+    const aiNotes = desc.match(/^AI notes:\s*(.+)$/im)?.[1]?.trim() || '';
+    const descNoAi = desc.replace(/^AI notes:.*$/gim, '');
+    const userNotes = descNoAi.match(/^Notes:\s*(.+)$/im)?.[1]?.trim() || '';
+    const p = localParts(e.startMs, cfg.tz);
+    const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
+    const priceNum = parseInt(String(price).replace(/[^\d]/g, ''), 10);
+    return {
+      uid: e.uid || '',
+      psid: e.psid || '',
+      source: e.psid ? 'fb' : 'sms',
+      time: clock,
+      start_ms: e.startMs,
+      end_ms: e.endMs,
+      name: (e.name || '').trim(),
+      phone: mobile,
+      phone_key: normalisePhone(mobile) || (e.psid ? `fb:${e.psid}` : ''),
+      service,
+      price,
+      quoted_cents: priceNum > 0 ? priceNum * 100 : 0,
+      vehicle,
+      address: e.location || '',
+      ai_notes: aiNotes,
+      notes: userNotes,
+      meta: metaMap[e.uid] || null,
+    };
+  });
+}
+
+async function customersHandler(env, url) {
+  const cfg = config(env);
+  const phoneParam = url.searchParams.get('phone') || '';
+  const all = await fetchBookingsInWindow(env, cfg, 365, 400);
+  const seenMs = Date.now();
+
+  if (phoneParam) {
+    const key = normalisePhone(phoneParam) || phoneParam;
+    const bookings = all.filter(b => b.phone_key === key)
+      .sort((a, b) => b.start_ms - a.start_ms);
+    if (!bookings.length) return jsonResponse({ error: 'not found' }, 404);
+    const first = bookings[0];
+    const totalCents = bookings.reduce((s, b) => {
+      if (b.meta?.status === 'done' || b.meta?.status === 'partial') {
+        return s + (b.meta.actual_amount || 0);
+      }
+      return s;
+    }, 0);
+    const past = bookings.filter(b => b.start_ms <= seenMs);
+    const upcoming = bookings.filter(b => b.start_ms > seenMs).reverse();
+    return jsonResponse({
+      phone: first.phone,
+      phone_key: key,
+      name: first.name,
+      visits: past.length,
+      upcoming_count: upcoming.length,
+      first_visit_ms: bookings[bookings.length - 1]?.start_ms || null,
+      last_visit_ms: past[0]?.start_ms || null,
+      total_collected_cents: totalCents,
+      vehicles: [...new Set(bookings.map(b => b.vehicle).filter(Boolean))],
+      addresses: [...new Set(bookings.map(b => b.address).filter(Boolean))],
+      bookings,
+    });
+  }
+
+  // List mode: aggregate by phone_key
+  const byKey = new Map();
+  for (const b of all) {
+    if (!b.phone_key) continue;
+    const g = byKey.get(b.phone_key) || {
+      phone_key: b.phone_key,
+      phone: b.phone,
+      name: '',
+      visits: 0,
+      upcoming: 0,
+      last_visit_ms: 0,
+      total_collected_cents: 0,
+      vehicles: new Set(),
+    };
+    if (!g.name && b.name) g.name = b.name;
+    if (!g.phone && b.phone) g.phone = b.phone;
+    if (b.start_ms <= seenMs) g.visits++;
+    else g.upcoming++;
+    if (b.start_ms > g.last_visit_ms && b.start_ms <= seenMs) g.last_visit_ms = b.start_ms;
+    if ((b.meta?.status === 'done' || b.meta?.status === 'partial') && b.meta.actual_amount) {
+      g.total_collected_cents += b.meta.actual_amount;
+    }
+    if (b.vehicle) g.vehicles.add(b.vehicle);
+    byKey.set(b.phone_key, g);
+  }
+  const customers = [...byKey.values()]
+    .map(g => ({ ...g, vehicles: [...g.vehicles] }))
+    .sort((a, b) => (b.last_visit_ms || 0) - (a.last_visit_ms || 0));
+
+  return jsonResponse({ count: customers.length, customers });
 }
 
 // Admin-side manual booking creation. Writes an iCloud Calendar event the
