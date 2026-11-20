@@ -2949,9 +2949,13 @@ async function customersHandler(env, url) {
     }, 0);
     const past = bookings.filter(b => b.start_ms <= seenMs);
     const upcoming = bookings.filter(b => b.start_ms > seenMs).reverse();
+    const psid = bookings.find(b => b.psid)?.psid || '';
+    const sources = [...new Set(bookings.map(b => b.source))];
     return jsonResponse({
       phone: first.phone,
       phone_key: key,
+      psid,
+      sources,
       name: first.name,
       visits: past.length,
       upcoming_count: upcoming.length,
@@ -2971,15 +2975,20 @@ async function customersHandler(env, url) {
     const g = byKey.get(b.phone_key) || {
       phone_key: b.phone_key,
       phone: b.phone,
+      psid: b.psid || '',
       name: '',
       visits: 0,
       upcoming: 0,
       last_visit_ms: 0,
       total_collected_cents: 0,
       vehicles: new Set(),
+      addresses: new Set(),
+      sources: new Set(),      // 'fb' / 'sms'
     };
     if (!g.name && b.name) g.name = b.name;
     if (!g.phone && b.phone) g.phone = b.phone;
+    if (!g.psid && b.psid) g.psid = b.psid;
+    g.sources.add(b.source);
     if (b.start_ms <= seenMs) g.visits++;
     else g.upcoming++;
     if (b.start_ms > g.last_visit_ms && b.start_ms <= seenMs) g.last_visit_ms = b.start_ms;
@@ -2987,10 +2996,16 @@ async function customersHandler(env, url) {
       g.total_collected_cents += b.meta.actual_amount;
     }
     if (b.vehicle) g.vehicles.add(b.vehicle);
+    if (b.address) g.addresses.add(b.address);
     byKey.set(b.phone_key, g);
   }
   const customers = [...byKey.values()]
-    .map(g => ({ ...g, vehicles: [...g.vehicles] }))
+    .map(g => ({
+      ...g,
+      vehicles: [...g.vehicles],
+      addresses: [...g.addresses],
+      sources: [...g.sources],
+    }))
     .sort((a, b) => (b.last_visit_ms || 0) - (a.last_visit_ms || 0));
 
   return jsonResponse({ count: customers.length, customers });
