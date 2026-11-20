@@ -2935,7 +2935,8 @@ async function customersHandler(env, url) {
   const seenMs = Date.now();
 
   if (phoneParam) {
-    const key = normalisePhone(phoneParam) || phoneParam;
+    // FB-only customers are keyed as 'fb:<psid>' — skip phone normalisation.
+    const key = phoneParam.startsWith('fb:') ? phoneParam : (normalisePhone(phoneParam) || phoneParam);
     const bookings = all.filter(b => b.phone_key === key)
       .sort((a, b) => b.start_ms - a.start_ms);
     if (!bookings.length) return jsonResponse({ error: 'not found' }, 404);
