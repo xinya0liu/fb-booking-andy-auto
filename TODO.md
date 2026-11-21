@@ -412,3 +412,16 @@ bookings_meta (
   - Bug：匹到关键词就丢掉整句，例：`Repair Philip crv` → `repair`；`regas and orings` → `regas + oring`；`add uv dye and pressure test` → `add uv dye + uv dye + pressure test`（重复）
   - 修复：手动标题直接用完整文本（减去 `$price` token），所见即所得
   - AI 自动创建的 Calendar 路径不受影响（AI prompt 已要求保留多项目服务，后处理只 `.trim()` 不替换）
+
+---
+
+## 已完成 ✅ — 2026-11-21（admin /run 一键给 FB 客人发预设消息）
+
+**背景**：Andy 在路上用 iPhone 看 `/run` 页，SMS 客人的 "On my way / Arrived / Running late" 一键 `sms:` 直达；FB 客人之前只能"复制文字 + 打开 FB 收件箱 + 手动找客人 + 粘贴"，极其烦。
+
+讨论了半天 FBID 深链接的方案（PSID ≠ FBID，Meta 2018 封了翻译 API，iPhone Business Suite app 不支持 Share/Copy link 导出 URL），最后结论是**根本不用打开 FB app**——我们的 worker 有 Page Access Token，直接走 Messenger Send API 发消息即可。
+
+- [x] worker 新增 `POST /api/messages/send-fb`：body `{psid, text}` + `secret` 查询参数，调现有 `sendToCustomer()`，返回 `{ok, error?}`
+- [x] admin 新增 server action `app/_actions/sendFbMessage.ts`（照 `markBooking.ts` 模式），POST 到 worker
+- [x] `app/run/RunCard.tsx` 的 `QuickMessages`：FB 客人按钮从"复制 + 跳收件箱"改为"server action 发送 + Sending… → Sent ✓ / 失败红字兜底"；保留卡片上独立的 "Open FB inbox — find [name]" 按钮用于自由对话
+- [x] 文档：README endpoints 表 + MAINTENANCE 端点表（顺手补了之前漏加的 `/api/bookings` / `/api/bookings/create` / `/api/customers`）

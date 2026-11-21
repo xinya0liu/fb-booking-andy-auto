@@ -122,6 +122,10 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
 | `/bookings/meta?secret=…[&uid=…]` | GET/POST/DELETE | 工单标记（status/pay/actual）；无 uid 返回全部 meta |
 | `/bookings/edit?secret=…&uid=…` | POST | 编辑 Calendar 事件字段 |
 | `/report?secret=…[&month=…&period=…&format=csv]` | GET | 月年收入报表 + CSV 导出 |
+| `/api/bookings?secret=…&date=…` | GET | 日期范围内的 bookings JSON（admin 仪表板用） |
+| `/api/bookings/create?secret=…` | POST | admin 端手动建 FB/SMS 预约（AI 补字段 + 跟进） |
+| `/api/customers?secret=…[&phone=…]` | GET | 客户列表或详情（admin 用） |
+| `/api/messages/send-fb?secret=…` | POST | 给 FB 客人发消息：body `{psid, text}`；admin /run 页的 on-my-way / arrived / running-late 按钮直接走这个，不用打开 Business Suite |
 | `/c?psid=…` | GET | 客人卡片 |
 | `/go?…` | GET | 旧链接中转 |
 | `/test-bark?token=…` | GET | 手动触发明日提醒 |

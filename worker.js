@@ -180,6 +180,18 @@ export default {
       return customersHandler(env, url);
     }
 
+    // 从 /run 页面一键给 FB 客人发预设消息（on my way / arrived / running late）
+    // 直接走 Messenger Send API，Andy 不用打开 Business Suite 翻找对话
+    if (url.pathname === '/api/messages/send-fb' && req.method === 'POST' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      const body = await req.json().catch(() => ({}));
+      const psid = String(body.psid || '').trim();
+      const text = String(body.text || '').trim();
+      if (!psid || !text) return Response.json({ ok: false, error: 'psid and text required' }, { status: 400 });
+      const r = await sendToCustomer(psid, text, env);
+      return Response.json(r, { status: r.ok ? 200 : 502 });
+    }
+
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
