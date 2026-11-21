@@ -425,3 +425,4 @@ bookings_meta (
 - [x] admin 新增 server action `app/_actions/sendFbMessage.ts`（照 `markBooking.ts` 模式），POST 到 worker
 - [x] `app/run/RunCard.tsx` 的 `QuickMessages`：FB 客人按钮从"复制 + 跳收件箱"改为"server action 发送 + Sending… → Sent ✓ / 失败红字兜底"；保留卡片上独立的 "Open FB inbox — find [name]" 按钮用于自由对话
 - [x] 文档：README endpoints 表 + MAINTENANCE 端点表（顺手补了之前漏加的 `/api/bookings` / `/api/bookings/create` / `/api/customers`）
+- [x] 实测时撞 Meta 24h 窗口 `(#10) outside allowed window` → `sendToCustomer` 加可选 `opts.tag`；`/api/messages/send-fb` 和每日提醒 cron 都带 `tag: 'CONFIRMED_EVENT_UPDATE'`（已确认预约的提醒是 Meta 允许的 tag 场景）

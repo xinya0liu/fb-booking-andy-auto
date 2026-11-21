@@ -188,7 +188,7 @@ export default {
       const psid = String(body.psid || '').trim();
       const text = String(body.text || '').trim();
       if (!psid || !text) return Response.json({ ok: false, error: 'psid and text required' }, { status: 400 });
-      const r = await sendToCustomer(psid, text, env);
+      const r = await sendToCustomer(psid, text, env, { tag: 'CONFIRMED_EVENT_UPDATE' });
       return Response.json(r, { status: r.ok ? 200 : 502 });
     }
 
@@ -1229,12 +1229,22 @@ async function applyCustomLabel(psid, service, date, env) {
   }
 }
 
-async function sendToCustomer(psid, text, env) {
+// opts.tag: pass a Messenger MESSAGE_TAG (e.g. 'CONFIRMED_EVENT_UPDATE') when
+// sending outside the 24h response window — reminders and /run one-tap
+// replies both need this because the customer may not have messaged recently.
+async function sendToCustomer(psid, text, env, opts = {}) {
+  const tag = opts.tag;
+  const payload = {
+    recipient: { id: psid },
+    messaging_type: tag ? 'MESSAGE_TAG' : 'RESPONSE',
+    message: { text, metadata: BOT_TAG },
+  };
+  if (tag) payload.tag = tag;
   try {
     const r = await fetch(`https://graph.facebook.com/${config(env).graph}/me/messages?access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN || '')}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ recipient: { id: psid }, messaging_type: 'RESPONSE', message: { text, metadata: BOT_TAG } }),
+      body: JSON.stringify(payload),
     });
     const j = await r.json();
     if (j.error) return { ok: false, error: j.error.message || 'Facebook error' };
@@ -1490,7 +1500,7 @@ async function handleScheduled(cron, env) {
     console.log('[scheduled] customer reminders:', toRemind.length);
     for (const e of toRemind) {
       if (!e.psid) continue;
-      await sendToCustomer(e.psid, buildReminderMessage(e, cfg, env), env);
+      await sendToCustomer(e.psid, buildReminderMessage(e, cfg, env), env, { tag: 'CONFIRMED_EVENT_UPDATE' });
     }
     return;
   }

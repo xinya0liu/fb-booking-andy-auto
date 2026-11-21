@@ -125,7 +125,7 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
 | `/api/bookings?secret=…&date=…` | GET | 日期范围内的 bookings JSON（admin 仪表板用） |
 | `/api/bookings/create?secret=…` | POST | admin 端手动建 FB/SMS 预约（AI 补字段 + 跟进） |
 | `/api/customers?secret=…[&phone=…]` | GET | 客户列表或详情（admin 用） |
-| `/api/messages/send-fb?secret=…` | POST | 给 FB 客人发消息：body `{psid, text}`；admin /run 页的 on-my-way / arrived / running-late 按钮直接走这个，不用打开 Business Suite |
+| `/api/messages/send-fb?secret=…` | POST | 给 FB 客人发消息：body `{psid, text}`；admin /run 页的 on-my-way / arrived / running-late 按钮直接走这个，不用打开 Business Suite。内部带 `MESSAGE_TAG: CONFIRMED_EVENT_UPDATE` 突破 Meta 24h 响应窗口（预约提醒的合法 tag）|
 | `/c?psid=…` | GET | 客人卡片 |
 | `/go?…` | GET | 旧链接中转 |
 | `/test-bark?token=…` | GET | 手动触发明日提醒 |
