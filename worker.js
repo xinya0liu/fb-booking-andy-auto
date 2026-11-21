@@ -1247,7 +1247,15 @@ async function sendToCustomer(psid, text, env, opts = {}) {
       body: JSON.stringify(payload),
     });
     const j = await r.json();
-    if (j.error) return { ok: false, error: j.error.message || 'Facebook error' };
+    if (j.error) {
+      const e = j.error;
+      console.error('sendToCustomer FB error', JSON.stringify({ req: payload, resp: j }));
+      const parts = [e.message || 'Facebook error'];
+      if (e.code != null) parts.push(`code=${e.code}`);
+      if (e.error_subcode != null) parts.push(`subcode=${e.error_subcode}`);
+      if (e.error_user_msg) parts.push(`user_msg=${e.error_user_msg}`);
+      return { ok: false, error: parts.join(' · ') };
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };
