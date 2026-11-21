@@ -112,7 +112,6 @@ Mac 的 server.py 用 AppleScript 自动发 iMessage 给客人
 | `/vehicles/api?secret=…` | CRUD API（GET list/search、POST、PUT、DELETE） |
 | `/vehicle-lookup?secret=…&make=…&model=…&year=…` | 车型精确查询 API（给未来自动报价系统用） |
 | `/refrigerant-prices?secret=…` | 冷媒单价 KV 读写（$/kg） |
-| `/api/messages/send-fb?secret=…` (POST) | 给 FB 客人发消息：body `{psid, text}`，走 Messenger Send API（admin /run 页的 on-my-way/arrived/late 按钮调这个） |
 | `/c?psid=…` / `/go?…` | 客人卡片与链接中转 |
 
 ## 快速检查系统是否正常

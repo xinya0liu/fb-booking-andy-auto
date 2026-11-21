@@ -4,22 +4,19 @@
 > 完整待办看 [TODO.md](./TODO.md)；设计决策和时间线看 [docs/HISTORY.md](./docs/HISTORY.md)。
 
 **更新时间：** 2026-11-21
-**当前分支：** `main`（本次改动未 commit：`worker.js` + README + MAINTENANCE + TODO + HISTORY + 本文件；另 `fb-booking-admin` 两处）
+**当前分支：** `main`
 
 ---
 
 ## 当前聚焦 🎯
 
-**Admin `/run` 页"一键联系客人"**（刚完成 FB 侧）
-- SMS 客人已有 `sms:` 直达预设按钮（On my way / Arrived / Running late）
-- FB 客人现在也一键直发——worker `POST /api/messages/send-fb` 走 Messenger Send API，admin 用 server action 调它；按钮 UI 显示 Sending… → Sent ✓
-- 曾考虑的 FBID 深链接方案已否决（见 HISTORY 2026-11-21）
-
-**Admin 后台 API**（之前在推进的 JSON 层）
+**Admin 后台 API**（最近在推进的 JSON 层）
 - `GET /api/bookings` / `POST /api/bookings/create` / `GET /api/customers`
 - 下一步：
   - [ ] 建配套的 Admin UI 页面消费这些 API
   - [ ] `/api/customers` 的聚合视图继续加字段（最近预约、payment summary 等）
+
+**待决定**：admin `/run` 页 FB 客人的"On my way / Arrived / Running late"目前只能走"复制文字 + 跳收件箱手动发"旧 UX——Meta 2024 后 Standard Access Page 完全不能主动发消息（见 HISTORY 2026-11-21 三次撞墙记录）。要一键直发必须走 Meta App Review 升级 `pages_messaging` Advanced Access 或 `human_agent` 权限（1-2 周 + 录屏），短期不做。
 
 ## 下一步候选 📋
 
@@ -41,8 +38,8 @@
 
 ## 最近完成 ✅
 
-**2026-11-21**
-- Admin `/run` 页 FB 客人也能一键发预设消息：worker 加 `POST /api/messages/send-fb`，admin 加 `sendFbMessage` server action，`RunCard.tsx` 按钮直发（替代旧的"复制 + 跳收件箱"）
+**2026-11-21（试水失败并回退）**
+- 尝试让 admin `/run` 页 FB 客人也能一键直发预设消息，worker 加端点 + admin 加 server action + RunCard 重写。实测连撞 Meta 三堵墙（24h window、CONFIRMED_EVENT_UPDATE 被 Standard Access 封、HUMAN_AGENT 需要 App Review），全部回退。详细三次 subcode 记在 HISTORY，避免下次重试
 
 **2026-11-20 前后**
 - `GET /api/customers` 增加 `psid` + `sources` 字段

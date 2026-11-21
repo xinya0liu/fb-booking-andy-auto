@@ -415,14 +415,14 @@ bookings_meta (
 
 ---
 
-## 已完成 ✅ — 2026-11-21（admin /run 一键给 FB 客人发预设消息）
+## ❌ 失败并回退：2026-11-21（admin /run 一键给 FB 客人发预设消息）
 
-**背景**：Andy 在路上用 iPhone 看 `/run` 页，SMS 客人的 "On my way / Arrived / Running late" 一键 `sms:` 直达；FB 客人之前只能"复制文字 + 打开 FB 收件箱 + 手动找客人 + 粘贴"，极其烦。
+**最终结论**：这个 Page 在 Meta Standard Access 下**无法用 Messenger Send API 主动给客人发消息**。见 HISTORY 2026-11-21 完整排错。要做必须先走 Meta App Review 升级 Advanced Access 或 `human_agent` 权限（1-2 周 + 录屏说明用途）。短期不做，admin `/run` 的 FB 按钮回退到老 UX（复制文字 + 跳收件箱手动发）。
 
-讨论了半天 FBID 深链接的方案（PSID ≠ FBID，Meta 2018 封了翻译 API，iPhone Business Suite app 不支持 Share/Copy link 导出 URL），最后结论是**根本不用打开 FB app**——我们的 worker 有 Page Access Token，直接走 Messenger Send API 发消息即可。
+- [x] 尝试并已全部回退：worker `/api/messages/send-fb` 端点、`sendToCustomer` 的 `opts.tag` 参数、admin `sendFbMessage` server action、`RunCard.tsx` 直发按钮、每日提醒 cron 的 tag
+- [x] 顺手补文档漏项（保留）：MAINTENANCE 端点表补齐之前漏的 `/api/bookings` / `/api/bookings/create` / `/api/customers`
 
-- [x] worker 新增 `POST /api/messages/send-fb`：body `{psid, text}` + `secret` 查询参数，调现有 `sendToCustomer()`，返回 `{ok, error?}`
-- [x] admin 新增 server action `app/_actions/sendFbMessage.ts`（照 `markBooking.ts` 模式），POST 到 worker
-- [x] `app/run/RunCard.tsx` 的 `QuickMessages`：FB 客人按钮从"复制 + 跳收件箱"改为"server action 发送 + Sending… → Sent ✓ / 失败红字兜底"；保留卡片上独立的 "Open FB inbox — find [name]" 按钮用于自由对话
-- [x] 文档：README endpoints 表 + MAINTENANCE 端点表（顺手补了之前漏加的 `/api/bookings` / `/api/bookings/create` / `/api/customers`）
-- [x] 实测时撞 Meta 24h 窗口 `(#10) outside allowed window` → `sendToCustomer` 加可选 `opts.tag`；`/api/messages/send-fb` 和每日提醒 cron 都带 `tag: 'CONFIRMED_EVENT_UPDATE'`（已确认预约的提醒是 Meta 允许的 tag 场景）
+**走不通的三次撞墙记在案**（避免重蹈覆辙）：
+- `messaging_type: RESPONSE` 跨 24h → `(#10) outside allowed window`
+- `MESSAGE_TAG + CONFIRMED_EVENT_UPDATE` → `code=100 · subcode=1893061 · "feature is not allowed. To send a utility message, use an approved utility template"`（Meta 2024 后 Standard Access Page 全部关闭）
+- `MESSAGE_TAG + HUMAN_AGENT` → `code=100 · subcode=2018276 · "Cannot tag messages with 'HUMAN_AGENT' without prior approval"`（需要走 App Review）

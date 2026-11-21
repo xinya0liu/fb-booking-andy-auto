@@ -180,18 +180,6 @@ export default {
       return customersHandler(env, url);
     }
 
-    // 从 /run 页面一键给 FB 客人发预设消息（on my way / arrived / running late）
-    // 直接走 Messenger Send API，Andy 不用打开 Business Suite 翻找对话
-    if (url.pathname === '/api/messages/send-fb' && req.method === 'POST' &&
-        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
-      const body = await req.json().catch(() => ({}));
-      const psid = String(body.psid || '').trim();
-      const text = String(body.text || '').trim();
-      if (!psid || !text) return Response.json({ ok: false, error: 'psid and text required' }, { status: 400 });
-      const r = await sendToCustomer(psid, text, env, { tag: 'HUMAN_AGENT' });
-      return Response.json(r, { status: r.ok ? 200 : 502 });
-    }
-
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
@@ -1229,33 +1217,15 @@ async function applyCustomLabel(psid, service, date, env) {
   }
 }
 
-// opts.tag: pass a Messenger MESSAGE_TAG (e.g. 'CONFIRMED_EVENT_UPDATE') when
-// sending outside the 24h response window — reminders and /run one-tap
-// replies both need this because the customer may not have messaged recently.
-async function sendToCustomer(psid, text, env, opts = {}) {
-  const tag = opts.tag;
-  const payload = {
-    recipient: { id: psid },
-    messaging_type: tag ? 'MESSAGE_TAG' : 'RESPONSE',
-    message: { text, metadata: BOT_TAG },
-  };
-  if (tag) payload.tag = tag;
+async function sendToCustomer(psid, text, env) {
   try {
     const r = await fetch(`https://graph.facebook.com/${config(env).graph}/me/messages?access_token=${encodeURIComponent(env.PAGE_ACCESS_TOKEN || '')}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ recipient: { id: psid }, messaging_type: 'RESPONSE', message: { text, metadata: BOT_TAG } }),
     });
     const j = await r.json();
-    if (j.error) {
-      const e = j.error;
-      console.error('sendToCustomer FB error', JSON.stringify({ req: payload, resp: j }));
-      const parts = [e.message || 'Facebook error'];
-      if (e.code != null) parts.push(`code=${e.code}`);
-      if (e.error_subcode != null) parts.push(`subcode=${e.error_subcode}`);
-      if (e.error_user_msg) parts.push(`user_msg=${e.error_user_msg}`);
-      return { ok: false, error: parts.join(' · ') };
-    }
+    if (j.error) return { ok: false, error: j.error.message || 'Facebook error' };
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -1508,7 +1478,7 @@ async function handleScheduled(cron, env) {
     console.log('[scheduled] customer reminders:', toRemind.length);
     for (const e of toRemind) {
       if (!e.psid) continue;
-      await sendToCustomer(e.psid, buildReminderMessage(e, cfg, env), env, { tag: 'CONFIRMED_EVENT_UPDATE' });
+      await sendToCustomer(e.psid, buildReminderMessage(e, cfg, env), env);
     }
     return;
   }
