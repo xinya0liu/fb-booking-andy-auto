@@ -188,7 +188,7 @@ export default {
       const psid = String(body.psid || '').trim();
       const text = String(body.text || '').trim();
       if (!psid || !text) return Response.json({ ok: false, error: 'psid and text required' }, { status: 400 });
-      const r = await sendToCustomer(psid, text, env, { tag: 'CONFIRMED_EVENT_UPDATE' });
+      const r = await sendToCustomer(psid, text, env, { tag: 'HUMAN_AGENT' });
       return Response.json(r, { status: r.ok ? 200 : 502 });
     }
 
