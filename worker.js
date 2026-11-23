@@ -189,6 +189,11 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return bookingsSearchHandler(env, url);
     }
+    // Fetch a single booking by UID — used by admin to show linked-job banners.
+    if (url.pathname === '/api/bookings/uid' && req.method === 'GET' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return bookingByUidHandler(env, url);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -3255,6 +3260,77 @@ async function bookingDeleteHandler(req, url, env) {
   await dav(env, 'DELETE', href, { headers: etag ? { 'if-match': etag } : {}, ok: [404] });
   await env.DB.prepare(`DELETE FROM bookings_meta WHERE calendar_uid = ?`).bind(uid).run();
   return jsonResponse({ ok: true });
+}
+
+async function bookingByUidHandler(env, url) {
+  const uid = url.searchParams.get('uid');
+  if (!uid) return jsonResponse({ error: 'uid required' }, 400);
+
+  const cfg = config(env);
+  const cal = await calendarUrl(env);
+  const now = Date.now();
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><d:getetag/><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(now - 400 * 864e5)}" end="${utcStamp(now + 400 * 864e5)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+
+  let found = null;
+  for (const resp of xmlAll(r.text, 'response')) {
+    const calData = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!calData.includes('BEGIN:VEVENT')) continue;
+    const parsed = parseEvent(calData, cfg.tz);
+    if (parsed.uid === uid) { found = parsed; break; }
+  }
+  if (!found) return jsonResponse({ error: 'not found' }, 404);
+
+  let meta = null;
+  if (env.DB) {
+    const row = await env.DB.prepare(`SELECT * FROM bookings_meta WHERE calendar_uid = ?`).bind(uid).first();
+    if (row) meta = row;
+  }
+
+  const e = found;
+  const desc = e.description || '';
+  const summaryParsed = parseSummaryFields(e.summary || '');
+  const descService = desc.match(/^Service:\s*(.+)$/im)?.[1]?.trim() || '';
+  const service = summaryParsed.service || descService || e.service || '';
+  const price = summaryParsed.price || e.price || '';
+  const vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim()
+    || summaryParsed.vehicle || e.vehicle || '';
+  const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
+  const aiNotes = desc.match(/^AI notes:\s*(.+)$/im)?.[1]?.trim() || '';
+  const descNoAi = desc.replace(/^AI notes:.*$/gim, '');
+  const userNotes = descNoAi.match(/^Notes:\s*(.+)$/im)?.[1]?.trim() || '';
+  const parentUid = desc.match(/^Follow-up of:\s*(.+)$/im)?.[1]?.trim() || '';
+  const p = localParts(e.startMs, cfg.tz);
+  const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
+  const priceNum = parseInt(String(price).replace(/[^\d]/g, ''), 10);
+  const durationMin = e.startMs && e.endMs ? Math.round((e.endMs - e.startMs) / 60000) : null;
+
+  return jsonResponse({
+    booking: {
+      uid: e.uid || '',
+      psid: e.psid || '',
+      source: e.psid ? 'fb' : 'sms',
+      time: clock,
+      start_ms: e.startMs,
+      end_ms: e.endMs,
+      duration_min: durationMin,
+      name: (e.name || '').trim(),
+      phone: mobile,
+      service, price,
+      quoted_cents: priceNum > 0 ? priceNum * 100 : 0,
+      vehicle,
+      address: e.location || '',
+      ai_notes: aiNotes,
+      notes: userNotes,
+      parent_uid: parentUid || null,
+      meta,
+    },
+  });
 }
 
 async function bookingEditHandler(req, url, env) {
