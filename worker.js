@@ -2822,7 +2822,30 @@ async function bookingsJsonHandler(env, url) {
   } else {
     return jsonResponse({ error: 'bad date — use "today" or YYYY-MM-DD' }, 400);
   }
+  const isToday = target.y === today.y && target.m === today.m && target.d === today.d;
   const events = await findTomorrowBookings(env, cfg, { target });
+
+  // Roll over undeleted tasks from the past 14 days into today's view.
+  if (isToday) {
+    const cal = await calendarUrl(env);
+    const todayStartMs = zonedToUtc(`${target.y}-${pad(target.m)}-${pad(target.d)}T00:00:00`, cfg.tz);
+    const pr = await dav(env, 'REPORT', cal, {
+      depth: 1,
+      body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><c:calendar-data/></d:prop>` +
+        `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+        `<c:time-range start="${utcStamp(todayStartMs - 14 * 864e5)}" end="${utcStamp(todayStartMs)}"/>` +
+        `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+    });
+    for (const resp of xmlAll(pr.text, 'response')) {
+      const ics = xmlText(xmlOne(resp, 'calendar-data'));
+      if (!ics.includes('BEGIN:VEVENT')) continue;
+      const e = parseEvent(ics, cfg.tz);
+      if (!e.startMs) continue;
+      if (!/^Task:\s*yes/im.test(e.description || '')) continue;
+      events.push(e);
+    }
+  }
+
   const uids = events.map(e => e.uid).filter(Boolean);
   let metaMap = {};
   if (uids.length && env.DB) {
