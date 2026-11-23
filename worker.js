@@ -205,6 +205,11 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return taskCreateHandler(req, env);
     }
+    // Mark a task as done — adds "Task-done: yes" to description so it won't roll over.
+    if (url.pathname === '/api/tasks/done' && req.method === 'POST' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return taskDoneHandler(url, env);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -2842,6 +2847,7 @@ async function bookingsJsonHandler(env, url) {
       const e = parseEvent(ics, cfg.tz);
       if (!e.startMs) continue;
       if (!/^Task:\s*yes/im.test(e.description || '')) continue;
+      if (/^Task-done:\s*yes/im.test(e.description || '')) continue;
       events.push(e);
     }
   }
@@ -2858,6 +2864,7 @@ async function bookingsJsonHandler(env, url) {
   const bookings = events.map(e => {
     const desc = e.description || '';
     const isTask = /^Task:\s*yes/im.test(desc);
+    const taskDone = isTask && /^Task-done:\s*yes/im.test(desc);
     const summaryParsed = parseSummaryFields(e.summary || '');
     const descService = desc.match(/^Service:\s*(.+)$/im)?.[1]?.trim() || '';
     const service = summaryParsed.service || descService || e.service || '';
@@ -2876,6 +2883,7 @@ async function bookingsJsonHandler(env, url) {
     return {
       uid: e.uid || '',
       type: isTask ? 'task' : 'booking',
+      task_done: taskDone || false,
       psid: e.psid || '',
       source: e.psid ? 'fb' : 'sms',
       time: clock,
@@ -3459,6 +3467,52 @@ async function taskCreateHandler(req, env) {
   const cal = await calendarUrl(env);
   await dav(env, 'PUT', `${cal}${rawId}.ics`, { body: ics });
   return jsonResponse({ ok: true, uid });
+}
+
+async function taskDoneHandler(url, env) {
+  const uid = url.searchParams.get('uid');
+  if (!uid) return jsonResponse({ error: 'uid required' }, 400);
+
+  const cfg = config(env);
+  const cal = await calendarUrl(env);
+  const now = Date.now();
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><d:getetag/><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(now - 400 * 864e5)}" end="${utcStamp(now + 400 * 864e5)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+
+  let href = null, etag = null, ics = null;
+  for (const resp of xmlAll(r.text, 'response')) {
+    const calData = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!calData.includes('BEGIN:VEVENT')) continue;
+    const parsed = parseEvent(calData, cfg.tz);
+    if (parsed.uid === uid) {
+      href = new URL(xmlText(xmlOne(resp, 'href')), cal).href;
+      etag = xmlText(xmlOne(resp, 'getetag')) || null;
+      ics = calData;
+      break;
+    }
+  }
+  if (!href) return jsonResponse({ error: 'event not found for uid ' + uid }, 404);
+
+  const desc = (ics.match(/^DESCRIPTION:(.*)$/im)?.[1] || '').replace(/\\n/g, '\n');
+  if (!/^Task:\s*yes/im.test(desc)) return jsonResponse({ error: 'not a task' }, 400);
+  if (/^Task-done:\s*yes/im.test(desc)) return jsonResponse({ ok: true, already: true });
+
+  const newDesc = desc.trimEnd() + '\nTask-done: yes';
+  try {
+    await dav(env, 'PUT', href, {
+      body: editEvent(ics, { DESCRIPTION: [`DESCRIPTION:${icsEsc(newDesc)}`] }),
+      headers: etag ? { 'if-match': etag } : {},
+    });
+  } catch (e) {
+    if (e.status === 412) return jsonResponse({ error: 'event changed elsewhere, try again' }, 409);
+    return jsonResponse({ error: e.message || 'update failed' }, 500);
+  }
+  return jsonResponse({ ok: true });
 }
 
 async function bookingEditHandler(req, url, env) {
