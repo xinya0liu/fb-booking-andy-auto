@@ -179,6 +179,12 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return customersHandler(env, url);
     }
+    // Admin-side search across all stored bookings (±1 year window).
+    // Matches q case-insensitively against name/phone/vehicle/address/service.
+    if (url.pathname === '/api/bookings/search' && req.method === 'GET' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return bookingsSearchHandler(env, url);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -2844,6 +2850,32 @@ async function bookingsJsonHandler(env, url) {
     date: `${target.y}-${pad(target.m)}-${pad(target.d)}`,
     count: bookings.length,
     bookings,
+  });
+}
+
+// /api/bookings/search?q=... — case-insensitive substring across the
+// customer-facing fields of every booking in the stored window. Returns
+// newest-first, capped at ?limit= (default 100). Empty q returns [] rather
+// than every booking (admin UI uses that as "waiting for input" state).
+async function bookingsSearchHandler(env, url) {
+  const cfg = config(env);
+  const q = (url.searchParams.get('q') || '').trim().toLowerCase();
+  const limit = Math.min(500, Math.max(1, parseInt(url.searchParams.get('limit') || '100', 10)));
+
+  if (!q) return jsonResponse({ q: '', count: 0, bookings: [] });
+
+  const all = await fetchBookingsInWindow(env, cfg, 365, 400);
+  const matches = all.filter(b => {
+    const haystack = [
+      b.name, b.phone, b.vehicle, b.address, b.service,
+    ].join('   ').toLowerCase();
+    return haystack.includes(q);
+  });
+  matches.sort((a, b) => b.start_ms - a.start_ms);
+  return jsonResponse({
+    q,
+    count: matches.length,
+    bookings: matches.slice(0, limit),
   });
 }
 
