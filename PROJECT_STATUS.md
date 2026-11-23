@@ -10,11 +10,15 @@
 
 ## 当前聚焦 🎯
 
-**Admin 后台 API**（JSON 层基本完整）
-- `GET /api/bookings` / `POST /api/bookings/create` / `GET /api/bookings/search` / `GET /api/customers` / `POST /bookings/delete`
-- 下一步：
-  - [ ] 建配套的 Admin UI 页面消费这些 API
-  - [ ] `/api/customers` 的聚合视图继续加字段（最近预约、payment summary 等）
+**Admin today/run 页功能完善**（本次完成）
+- Edit modal 现在支持修改开始时间（HH:MM）和 job duration
+- RunCard 显示 job duration；follow-up 关系用紫色小标展示（↩ 是跟进单，↪ 有已排跟进单）
+- `/api/bookings` 新增 `duration_min` 和 `parent_uid` 字段
+- `/bookings/edit` 新增 `start_time` / `duration_min` 修改支持
+
+**下一步候选**
+- [ ] Admin CRM：客户列表页、客户详情页（历史服务记录）
+- [ ] `/api/customers` 聚合视图继续加字段（最近预约、payment summary 等）
 
 **待决定**：admin `/run` 页 FB 客人的"On my way / Arrived / Running late"目前只能走"复制文字 + 跳收件箱手动发"旧 UX——Meta 2024 后 Standard Access Page 完全不能主动发消息（见 HISTORY 2026-11-21 三次撞墙记录）。要一键直发必须走 Meta App Review 升级 `pages_messaging` Advanced Access 或 `human_agent` 权限（1-2 周 + 录屏），短期不做。
 
@@ -42,6 +46,7 @@
 - 新增 `GET /api/bookings/search?q=…` 全局搜索（跨姓名/电话/车型/地址/服务，最新优先，默认 100 条，空 q 返回空列表）
 - 新增 `POST /bookings/delete?uid=…` 按 UID 删除 iCloud 日历事件 + D1 bookings_meta（±400 天窗口查找，404 若不存在）
 - SMS `Booking confirmed` 后自动存通讯录：`server.py` 用 AppleScript 把客人电话存入 Mac 通讯录，名字 = 预约时间（如 `26/11 Thursday 11:30am`），有真名则追加（`26/11 Thursday 11:30am Bob`），iCloud 同步到 iPad/iPhone
+- Admin today/run 页：edit modal 加 start time + duration 字段；RunCard 显示 duration 和 follow-up 关系标记；`/bookings/edit` 和 `/api/bookings` 对应扩充
 
 **2026-11-21（试水失败并回退）**
 - 尝试让 admin `/run` 页 FB 客人也能一键直发预设消息，worker 加端点 + admin 加 server action + RunCard 重写。实测连撞 Meta 三堵墙（24h window、CONFIRMED_EVENT_UPDATE 被 Standard Access 封、HUMAN_AGENT 需要 App Review），全部回退。详细三次 subcode 记在 HISTORY，避免下次重试
