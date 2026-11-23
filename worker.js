@@ -2828,9 +2828,11 @@ async function bookingsJsonHandler(env, url) {
     const aiNotes = desc.match(/^AI notes:\s*(.+)$/im)?.[1]?.trim() || '';
     const descNoAi = desc.replace(/^AI notes:.*$/gim, '');
     const userNotes = descNoAi.match(/^Notes:\s*(.+)$/im)?.[1]?.trim() || '';
+    const parentUid = desc.match(/^Follow-up of:\s*(.+)$/im)?.[1]?.trim() || '';
     const p = localParts(e.startMs, cfg.tz);
     const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
     const priceNum = parseInt(String(price).replace(/[^\d]/g, ''), 10);
+    const durationMin = e.startMs && e.endMs ? Math.round((e.endMs - e.startMs) / 60000) : null;
     return {
       uid: e.uid || '',
       psid: e.psid || '',
@@ -2838,6 +2840,7 @@ async function bookingsJsonHandler(env, url) {
       time: clock,
       start_ms: e.startMs,
       end_ms: e.endMs,
+      duration_min: durationMin,
       name: (e.name || '').trim(),
       phone: mobile,
       service,
@@ -2847,6 +2850,7 @@ async function bookingsJsonHandler(env, url) {
       address: e.location || '',
       ai_notes: aiNotes,
       notes: userNotes,
+      parent_uid: parentUid || null,
       meta: metaMap[e.uid] || null,
     };
   });
@@ -3300,6 +3304,22 @@ async function bookingEditHandlerInner(req, url, env) {
     DTSTAMP: [`DTSTAMP:${utcStamp(Date.now())}`],
     'LAST-MODIFIED': [`LAST-MODIFIED:${utcStamp(Date.now())}`],
   };
+
+  if (body.start_time !== undefined || body.duration_min !== undefined) {
+    const p = localParts(target.startMs, cfg.tz);
+    let hh = p.h, mm = p.min;
+    if (body.start_time) {
+      const parts = String(body.start_time).split(':').map(Number);
+      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) { hh = parts[0]; mm = parts[1]; }
+    }
+    const curDuration = target.endMs && target.startMs ? target.endMs - target.startMs : cfg.minutes * 60000;
+    const durationMs = body.duration_min ? Math.min(600, Math.max(15, +body.duration_min)) * 60000 : curDuration;
+    const localIso = `${p.y}-${pad(p.m)}-${pad(p.d)}T${pad(hh)}:${pad(mm)}`;
+    const startUtc = zonedToUtc(localIso, cfg.tz);
+    changes.DTSTART = [`DTSTART:${utcStamp(startUtc)}`];
+    changes.DTEND   = [`DTEND:${utcStamp(startUtc + durationMs)}`];
+    changes.DURATION = null;
+  }
 
   // New values (undefined = skip, '' = clear)
   // 'notes' is the user's own records (goes to "Notes:" line).
