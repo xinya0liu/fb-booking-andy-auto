@@ -2924,15 +2924,15 @@ async function bookingsSearchHandler(env, url) {
   const q = (url.searchParams.get('q') || '').trim().toLowerCase();
   const limit = Math.min(500, Math.max(1, parseInt(url.searchParams.get('limit') || '100', 10)));
 
-  if (!q) return jsonResponse({ q: '', count: 0, bookings: [] });
-
   const all = await fetchBookingsInWindow(env, cfg, 365, 400);
-  const matches = all.filter(b => {
-    const haystack = [
-      b.name, b.phone, b.vehicle, b.address, b.service,
-    ].join('   ').toLowerCase();
-    return haystack.includes(q);
-  });
+  const matches = q
+    ? all.filter(b => {
+        const haystack = [
+          b.name, b.phone, b.vehicle, b.address, b.service,
+        ].join('   ').toLowerCase();
+        return haystack.includes(q);
+      })
+    : all.slice();
   matches.sort((a, b) => b.start_ms - a.start_ms);
   return jsonResponse({
     q,
