@@ -200,6 +200,11 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return bookingFollowupsHandler(env, url);
     }
+    // Admin task creation — creates a plain iCal event tagged "Task: yes".
+    if (url.pathname === '/api/tasks' && req.method === 'POST' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return taskCreateHandler(req, env);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -2829,6 +2834,7 @@ async function bookingsJsonHandler(env, url) {
   }
   const bookings = events.map(e => {
     const desc = e.description || '';
+    const isTask = /^Task:\s*yes/im.test(desc);
     const summaryParsed = parseSummaryFields(e.summary || '');
     const descService = desc.match(/^Service:\s*(.+)$/im)?.[1]?.trim() || '';
     const service = summaryParsed.service || descService || e.service || '';
@@ -2846,13 +2852,14 @@ async function bookingsJsonHandler(env, url) {
     const durationMin = e.startMs && e.endMs ? Math.round((e.endMs - e.startMs) / 60000) : null;
     return {
       uid: e.uid || '',
+      type: isTask ? 'task' : 'booking',
       psid: e.psid || '',
       source: e.psid ? 'fb' : 'sms',
       time: clock,
       start_ms: e.startMs,
       end_ms: e.endMs,
       duration_min: durationMin,
-      name: (e.name || '').trim(),
+      name: isTask ? (e.summary || '').trim() : (e.name || '').trim(),
       phone: mobile,
       service,
       price,
@@ -3394,6 +3401,41 @@ async function bookingFollowupsHandler(env, url) {
   }
   followups.sort((a, b) => (a.start_ms || 0) - (b.start_ms || 0));
   return jsonResponse({ followups });
+}
+
+async function taskCreateHandler(req, env) {
+  const cfg = config(env);
+  const body = await req.json();
+  const { date, time_hhmm, note } = body;
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+    return jsonResponse({ error: 'date required (YYYY-MM-DD)' }, 400);
+  if (!note || !String(note).trim())
+    return jsonResponse({ error: 'note required' }, 400);
+  if (!time_hhmm || !/^\d{2}:\d{2}$/.test(time_hhmm))
+    return jsonResponse({ error: 'time_hhmm required (HH:MM)' }, 400);
+
+  const startMs = zonedToUtc(`${date}T${time_hhmm}`, cfg.tz);
+  const rawId = (await sha256hex(`task-${date}-${time_hhmm}-${note}-${Date.now()}`)).slice(0, 24);
+  const uid = `${rawId}-task@fb-booking`;
+
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Andy Auto//Task//EN',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTART:${utcStamp(startMs)}`,
+    `DTEND:${utcStamp(startMs + 3600000)}`,
+    `SUMMARY:${icsEsc(String(note).trim())}`,
+    'DESCRIPTION:Task: yes',
+    `DTSTAMP:${utcStamp(Date.now())}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+
+  const cal = await calendarUrl(env);
+  await dav(env, 'PUT', `${cal}${rawId}.ics`, { body: ics });
+  return jsonResponse({ ok: true, uid });
 }
 
 async function bookingEditHandler(req, url, env) {
