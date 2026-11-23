@@ -1812,6 +1812,10 @@ async function printPage(env, origin, dateParam = '') {
 <title>Andy Auto – ${dateStr}</title>
 <style>
   body { font-family: Arial, sans-serif; margin: 24px 32px; color: #111; }
+  .admin-back { margin-bottom: 12px; }
+  .admin-back a { font-size: 0.85em; color: #555; text-decoration: none; padding: 4px 10px 4px 6px; border: 1px solid #ddd; border-radius: 5px; background: #f5f5f5; }
+  .admin-back a:hover { background: #e8e8e8; color: #111; }
+  @media print { .admin-back { display: none; } }
   h1 { font-size: 1.15em; margin-bottom: 2px; }
   h2 { font-size: 0.95em; color: #555; margin-top: 0; font-weight: normal; margin-bottom: 16px; }
   table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
@@ -2317,6 +2321,7 @@ function updateRowCells(idx) {
 }
 </script>
 </head><body>
+<div class="admin-back"><a href="/">← Admin</a></div>
 <h1>Andy Auto AC Regas</h1>
 <div class="toggle">
   <a href="${todayUrl}"${isToday ? ' class="active"' : ''}>Today</a>
