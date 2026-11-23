@@ -3446,14 +3446,26 @@ async function bookingEditHandlerInner(req, url, env) {
 
   if (body.start_time !== undefined || body.duration_min !== undefined) {
     const p = localParts(target.startMs, cfg.tz);
-    let hh = p.h, mm = p.min;
+    let yy = p.y, mo = p.m, dd = p.d, hh = p.h, mm = p.min;
     if (body.start_time) {
-      const parts = String(body.start_time).split(':').map(Number);
-      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) { hh = parts[0]; mm = parts[1]; }
+      const timeStr = String(body.start_time);
+      if (timeStr.includes('T')) {
+        // "YYYY-MM-DDTHH:MM" from datetime-local — replace date AND time
+        const [datePart, timePart] = timeStr.split('T');
+        const [ty, tm, td] = datePart.split('-').map(Number);
+        const [th, tmi] = timePart.split(':').map(Number);
+        if (!isNaN(ty) && !isNaN(tm) && !isNaN(td) && !isNaN(th) && !isNaN(tmi)) {
+          yy = ty; mo = tm; dd = td; hh = th; mm = tmi;
+        }
+      } else {
+        // Legacy "HH:MM" — keep existing date, replace time only
+        const parts = timeStr.split(':').map(Number);
+        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) { hh = parts[0]; mm = parts[1]; }
+      }
     }
     const curDuration = target.endMs && target.startMs ? target.endMs - target.startMs : cfg.minutes * 60000;
     const durationMs = body.duration_min ? Math.min(600, Math.max(15, +body.duration_min)) * 60000 : curDuration;
-    const localIso = `${p.y}-${pad(p.m)}-${pad(p.d)}T${pad(hh)}:${pad(mm)}`;
+    const localIso = `${yy}-${pad(mo)}-${pad(dd)}T${pad(hh)}:${pad(mm)}`;
     const startUtc = zonedToUtc(localIso, cfg.tz);
     changes.DTSTART = [`DTSTART:${utcStamp(startUtc)}`];
     changes.DTEND   = [`DTEND:${utcStamp(startUtc + durationMs)}`];
