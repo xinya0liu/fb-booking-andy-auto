@@ -1674,6 +1674,20 @@ async function printPage(env, origin, dateParam = '') {
     const p = localParts(e.startMs, cfg.tz);
     const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
     const desc = e.description || '';
+    const isTask = /^Task:\s*yes/im.test(desc);
+
+    // Task rows: render a spanning row and skip booking-specific processing.
+    if (isTask) {
+      bookingData.push(null); // keep index alignment with BOOKINGS array
+      const taskName = (e.summary || '').trim();
+      return `<tr class="task-row">
+        <td class="n">${i + 1}</td>
+        <td class="src"><span class="badge-task">Task</span></td>
+        <td class="time">${clock}</td>
+        <td class="task-name" colspan="7">${taskName}</td>
+      </tr>`;
+    }
+
     const isSms = !e.psid;
     const summaryParsed = parseSummaryFields(e.summary || '');
     const descService = desc.match(/^Service:\s*(.+)$/im)?.[1]?.trim() || '';
@@ -1810,9 +1824,12 @@ async function printPage(env, origin, dateParam = '') {
   td.src { padding: 9px 2px; width: 26px; text-align: center; }
   /* Grayscale-friendly: SMS is a filled black pill, FB is an outlined one.
      Distinct on a B&W printer without relying on color. */
-  .badge-fb, .badge-sms { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 0.65em; font-weight: bold; letter-spacing: 0.2px; line-height: 1.3; }
+  .badge-fb, .badge-sms, .badge-task { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 0.65em; font-weight: bold; letter-spacing: 0.2px; line-height: 1.3; }
   .badge-sms { background: #111; color: #fff; }
   .badge-fb { background: #fff; color: #111; border: 1px solid #111; padding: 0 4px; }
+  .badge-task { background: #fef3dc; color: #7a4a00; border: 1px solid #e0a040; }
+  tr.task-row { background: #fffdf5; }
+  tr.task-row td.task-name { font-style: italic; color: #555; }
   td.time { white-space: nowrap; font-weight: bold; font-size: 1.05em; }
   td.svc { max-width: 210px; word-break: break-word; }
   td.svc .svc-notes { font-size: 0.82em; margin-top: 3px; line-height: 1.25; }
@@ -2053,8 +2070,9 @@ function renderCollectedLine() {
 }
 
 function openBookingModal(idx) {
-  currentIdx = idx;
   const b = window.BOOKINGS[idx];
+  if (!b) return; // task row — no modal
+  currentIdx = idx;
   const m = window.META[b.uid] || {};
   const titleBits = [b.time, b.price].filter(Boolean);
   document.getElementById('bm-title').textContent = titleBits.length ? titleBits.join(' · ') : 'Booking';
