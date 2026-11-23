@@ -112,6 +112,11 @@ Mac 的 server.py 用 AppleScript 自动发 iMessage 给客人
 | `/vehicles/api?secret=…` | CRUD API（GET list/search、POST、PUT、DELETE） |
 | `/vehicle-lookup?secret=…&make=…&model=…&year=…` | 车型精确查询 API（给未来自动报价系统用） |
 | `/refrigerant-prices?secret=…` | 冷媒单价 KV 读写（$/kg） |
+| `/api/bookings?secret=…[&date=…]` | 日期范围内的 bookings JSON（admin 仪表板用） |
+| `/api/bookings/create?secret=…` | admin 手动建预约（AI 补字段） |
+| `/api/bookings/search?secret=…&q=…[&limit=…]` | 全局搜索 bookings（姓名/电话/车型/地址/服务） |
+| `/api/customers?secret=…[&phone=…]` | 客户列表或详情（admin 用） |
+| `/bookings/delete?secret=…&uid=…` | 按 UID 删除 iCloud 日历事件 + D1 bookings_meta |
 | `/c?psid=…` / `/go?…` | 客人卡片与链接中转 |
 
 ## 快速检查系统是否正常

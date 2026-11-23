@@ -124,7 +124,9 @@ Cloudflare 后台 → Workers & Pages → `fb-booking-andy-auto` → **Logs**，
 | `/report?secret=…[&month=…&period=…&format=csv]` | GET | 月年收入报表 + CSV 导出 |
 | `/api/bookings?secret=…&date=…` | GET | 日期范围内的 bookings JSON（admin 仪表板用） |
 | `/api/bookings/create?secret=…` | POST | admin 端手动建 FB/SMS 预约（AI 补字段 + 跟进） |
+| `/api/bookings/search?secret=…&q=…[&limit=…]` | GET | 全局搜索 bookings（姓名/电话/车型/地址/服务，最新优先，默认 100 条） |
 | `/api/customers?secret=…[&phone=…]` | GET | 客户列表或详情（admin 用） |
+| `/bookings/delete?secret=…&uid=…` | POST | 按 UID 删除 iCloud 日历事件 + D1 bookings_meta（同 /bookings/edit 的 ±400 天查询逻辑） |
 | `/c?psid=…` | GET | 客人卡片 |
 | `/go?…` | GET | 旧链接中转 |
 | `/test-bark?token=…` | GET | 手动触发明日提醒 |

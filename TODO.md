@@ -429,6 +429,14 @@ bookings_meta (
 
 ---
 
+## 已完成 ✅ — 2026-11-23（Admin API 补完 + SMS 通讯录自动存）
+
+- [x] `GET /api/bookings/search?q=…[&limit=…]` — 全局搜索（复用 fetchBookingsInWindow，跨姓名/电话/车型/地址/服务，最新优先，默认 100 条，空 q 返回空列表）
+- [x] `POST /bookings/delete?uid=…` — 按 UID 删除 iCloud 日历事件 + D1 bookings_meta（同 /bookings/edit 的 ±400 天 REPORT 查询逻辑；404 若找不到事件）
+- [x] SMS `Booking confirmed` 后自动存通讯录 — `server.py` 新增 `save_contact()`，用 AppleScript 把客人 SMS 号码存入 Mac 通讯录，名字 = 预约时间 + 真名（如 `26/11 Thursday 11:30am Bob`）；worker `doKeywordBooking` 返回值改为 `{ reply, time_label }` 对象
+
+---
+
 ## ❌ 失败并回退：2026-11-21（admin /run 一键给 FB 客人发预设消息）
 
 **最终结论**：这个 Page 在 Meta Standard Access 下**无法用 Messenger Send API 主动给客人发消息**。见 HISTORY 2026-11-21 完整排错。要做必须先走 Meta App Review 升级 Advanced Access 或 `human_agent` 权限（1-2 周 + 录屏说明用途）。短期不做，admin `/run` 的 FB 按钮回退到老 UX（复制文字 + 跳收件箱手动发）。

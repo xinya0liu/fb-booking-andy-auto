@@ -201,6 +201,34 @@ def get_contact_name(phone):
             pass
     return ''
 
+def save_contact(phone, name):
+    """Create or update a macOS Contacts entry for phone with the given name."""
+    e164 = to_e164(phone)
+    digits = re.sub(r'[^\d]', '', e164)
+    core = digits[-9:] if len(digits) >= 9 else digits
+    safe_name = name.replace('\\', '\\\\').replace('"', '\\"')
+    safe_e164 = e164.replace('"', '\\"')
+    script = f'''tell application "Contacts"
+    set found to false
+    repeat with p in (every person)
+        repeat with ph in (phones of p)
+            if value of ph contains "{core}" then
+                set first name of p to "{safe_name}"
+                set last name of p to ""
+                set found to true
+                exit repeat
+            end if
+        end repeat
+        if found then exit repeat
+    end repeat
+    if not found then
+        set np to make new person with properties {{first name: "{safe_name}"}}
+        make new phone at end of phones of np with properties {{label:"mobile", value:"{safe_e164}"}}
+    end if
+    save
+end tell'''
+    subprocess.run(["osascript", "-e", script], check=True, timeout=30)
+
 def send_imessage(phone, text, service='iMessage'):
     e164 = to_e164(phone)
     # AppleScript can't handle json \uXXXX or \n escapes — build string manually
@@ -290,6 +318,14 @@ def scan_keywords():
                                 print(f"Replied to {phone} via {service}", flush=True)
                             except Exception as se:
                                 print(f"SEND FAILED for {phone}: {se}\nReply was: {reply}", flush=True)
+                        time_label = result.get("time_label", "")
+                        if time_label and action == 'confirmed':
+                            try:
+                                full_name = time_label + (" " + contact_name if contact_name else "")
+                                save_contact(phone, full_name)
+                                print(f"Contact saved: {phone} → '{full_name}'", flush=True)
+                            except Exception as ce:
+                                print(f"Save contact failed for {phone}: {ce}", flush=True)
                 except urllib.error.HTTPError as e:
                     # Worker returned 4xx/5xx — permanent failure, skip this message
                     print(f"Worker error {e.code} for {phone}: {e.read().decode('utf-8', errors='replace')[:200]}", flush=True)

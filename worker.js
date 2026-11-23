@@ -262,8 +262,8 @@ export default {
       if (!conversation) return new Response(JSON.stringify({ error: 'no conversation' }), { status: 400, headers: { 'content-type': 'application/json' } });
       const cfg = config(env);
       try {
-        const reply = await doKeywordBooking(conversation, phone, action, env, cfg, contactName);
-        return new Response(JSON.stringify({ ok: true, reply }), { headers: { 'content-type': 'application/json' } });
+        const { reply, time_label } = await doKeywordBooking(conversation, phone, action, env, cfg, contactName);
+        return new Response(JSON.stringify({ ok: true, reply, time_label }), { headers: { 'content-type': 'application/json' } });
       } catch (e) {
         console.error('imessage-keyword error', e);
         await bark(env, `⚠️ iMessage keyword failed`, e.message, '');
@@ -548,7 +548,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
       const eclock = `${eh % 12 || 12}${ai.end.min ? ':' + pad(ai.end.min) : ''}${eh < 12 ? 'am' : 'pm'}`;
       when += ` – ${eclock}`;
     }
-    return `✅ Andy Auto AC Regas\nTime: ${when}\nSee you then!`;
+    return { reply: `✅ Andy Auto AC Regas\nTime: ${when}\nSee you then!`, time_label: when };
   }
   if (action === 'updated' || action === 'update') {
     const list = await findBookingsByPhone(phone, env, cfg);
@@ -564,7 +564,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
         const eclock = `${eh % 12 || 12}${ai.end.min ? ':' + pad(ai.end.min) : ''}${eh < 12 ? 'am' : 'pm'}`;
         when += ` – ${eclock}`;
       }
-      return `✅ Andy Auto AC Regas\nTime: ${when}\nSee you then!`;
+      return { reply: `✅ Andy Auto AC Regas\nTime: ${when}\nSee you then!`, time_label: when };
     }
     const target = list[0];
     const old = localParts(target.startMs, cfg.tz);
@@ -609,7 +609,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
     }
     if (!replyLines.length) {
       await bark(env, `ℹ️ Booking updated: no changes detected`, `Phone: ${phone}`, '');
-      return null;
+      return { reply: null, time_label: null };
     }
     const changedLabels = replyLines.map(l => l.replace(/^Updated /, '').split(':')[0]);
     changes.DESCRIPTION = [`DESCRIPTION:${icsEsc(mergeNotes(target.description, noteFields, `Updated: ${changedLabels.join(', ')}`))}` ];
@@ -620,14 +620,14 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
       throw e;
     }
     await barkBooking(env, `🔄 Booking updated: ${target.name || 'SMS Customer'}`, replyLines.join('\n'), '', '');
-    return `🔄 Andy Auto AC Regas\n${replyLines.join('\n')}\nSee you then!`;
+    return { reply: `🔄 Andy Auto AC Regas\n${replyLines.join('\n')}\nSee you then!`, time_label: null };
   }
 
   if (action === 'cancelled' || action === 'cancel') {
     const list = await findBookingsByPhone(phone, env, cfg);
     if (!list.length) {
       await bark(env, `⚠️ Booking not found for ${phone}`, 'No upcoming booking found. Please update the calendar manually.', '');
-      return null;
+      return { reply: null, time_label: null };
     }
     const target = list[0];
     try {
@@ -639,7 +639,7 @@ async function doKeywordBooking(conversationText, phone, action, env, cfg, conta
     const p = localParts(target.startMs, cfg.tz);
     const more = list.length > 1 ? '\nℹ️ This customer has other upcoming bookings.' : '';
     await barkBooking(env, `❌ Booking cancelled: ${target.name || 'SMS Customer'}`, [p.label, target.service].filter(Boolean).join(' · ') + more, '', '');
-    return `Feel free to rebook anytime!`;
+    return { reply: `Feel free to rebook anytime!`, time_label: null };
   }
 
   throw new Error(`Action "${action}" not yet supported via iMessage keyword`);
