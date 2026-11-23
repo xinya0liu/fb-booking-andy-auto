@@ -147,6 +147,10 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return bookingEditHandler(req, url, env);
     }
+    if (url.pathname === '/bookings/delete' && req.method === 'POST' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return bookingDeleteHandler(req, url, env);
+    }
     if (url.pathname === '/report' && req.method === 'GET' &&
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return reportPage(req, url, env);
@@ -3214,6 +3218,39 @@ async function migrateAiNotesHandler(env) {
     seen, migrated, alreadyMigrated, noNotes, errors,
     errorSamples: errorSummaries,
   });
+}
+
+async function bookingDeleteHandler(req, url, env) {
+  const uid = url.searchParams.get('uid');
+  if (!uid) return jsonResponse({ error: 'uid required' }, 400);
+
+  const cal = await calendarUrl(env);
+  const now = Date.now();
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><d:getetag/><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(now - 400 * 864e5)}" end="${utcStamp(now + 400 * 864e5)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+
+  let href = null, etag = null;
+  const cfg = config(env);
+  for (const resp of xmlAll(r.text, 'response')) {
+    const calData = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!calData.includes('BEGIN:VEVENT')) continue;
+    const parsed = parseEvent(calData, cfg.tz);
+    if (parsed.uid === uid) {
+      href = new URL(xmlText(xmlOne(resp, 'href')), cal).href;
+      etag = xmlText(xmlOne(resp, 'getetag')) || null;
+      break;
+    }
+  }
+  if (!href) return jsonResponse({ error: 'event not found for uid ' + uid }, 404);
+
+  await dav(env, 'DELETE', href, { headers: etag ? { 'if-match': etag } : {}, ok: [404] });
+  await env.DB.prepare(`DELETE FROM bookings_meta WHERE calendar_uid = ?`).bind(uid).run();
+  return jsonResponse({ ok: true });
 }
 
 async function bookingEditHandler(req, url, env) {
