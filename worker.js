@@ -194,6 +194,12 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return bookingByUidHandler(env, url);
     }
+    // Find all follow-up bookings for a given parent UID — scans upcoming
+    // events for "Follow-up of: <uid>" in the description.
+    if (url.pathname === '/api/bookings/followups' && req.method === 'GET' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return bookingFollowupsHandler(env, url);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -3331,6 +3337,63 @@ async function bookingByUidHandler(env, url) {
       meta,
     },
   });
+}
+
+async function bookingFollowupsHandler(env, url) {
+  const uid = url.searchParams.get('uid');
+  if (!uid) return jsonResponse({ error: 'uid required' }, 400);
+
+  const cfg = config(env);
+  const cal = await calendarUrl(env);
+  const now = Date.now();
+  // Scan -7 days to +180 days: covers follow-ups just past and upcoming.
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><d:getetag/><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(now - 7 * 864e5)}" end="${utcStamp(now + 180 * 864e5)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+
+  const followups = [];
+  for (const resp of xmlAll(r.text, 'response')) {
+    const calData = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!calData.includes('BEGIN:VEVENT')) continue;
+    const e = parseEvent(calData, cfg.tz);
+    const desc = e.description || '';
+    const parentUid = desc.match(/^Follow-up of:\s*(.+)$/im)?.[1]?.trim() || '';
+    if (parentUid !== uid) continue;
+    const summaryParsed = parseSummaryFields(e.summary || '');
+    const descService = desc.match(/^Service:\s*(.+)$/im)?.[1]?.trim() || '';
+    const service = summaryParsed.service || descService || e.service || '';
+    const price = summaryParsed.price || e.price || '';
+    const vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim()
+      || summaryParsed.vehicle || e.vehicle || '';
+    const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
+    const p = localParts(e.startMs, cfg.tz);
+    const clock = `${p.h % 12 || 12}:${pad(p.min)}${p.h < 12 ? 'am' : 'pm'}`;
+    const priceNum = parseInt(String(price).replace(/[^\d]/g, ''), 10);
+    const durationMin = e.startMs && e.endMs ? Math.round((e.endMs - e.startMs) / 60000) : null;
+    followups.push({
+      uid: e.uid || '',
+      psid: e.psid || '',
+      source: e.psid ? 'fb' : 'sms',
+      time: clock,
+      start_ms: e.startMs,
+      end_ms: e.endMs,
+      duration_min: durationMin,
+      name: (e.name || '').trim(),
+      phone: mobile,
+      service, price,
+      quoted_cents: priceNum > 0 ? priceNum * 100 : 0,
+      vehicle,
+      address: e.location || '',
+      parent_uid: uid,
+      meta: null,
+    });
+  }
+  followups.sort((a, b) => (a.start_ms || 0) - (b.start_ms || 0));
+  return jsonResponse({ followups });
 }
 
 async function bookingEditHandler(req, url, env) {
