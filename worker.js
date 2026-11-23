@@ -1795,7 +1795,7 @@ async function printPage(env, origin, dateParam = '') {
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <div class="collected-line" id="collected-line"></div>`;
+  <div class="collected-line" id="collected-line" style="display:none"></div>`;
 
   // Load any daily notes Andy has written for this date (persisted in KV).
   const noteKey = `note:${targetIso}`;
@@ -2044,7 +2044,7 @@ function renderBadge(idx) {
 
 function renderCollectedLine() {
   const line = document.getElementById('collected-line');
-  if (!line || !window.BOOKINGS.length) { if (line) line.textContent = ''; return; }
+  if (!line || !window.BOOKINGS.length) { if (line) { line.textContent = ''; line.style.display = 'none'; } return; }
   let collected = 0, cash = 0, payid = 0, unpaid = 0;
   let unpaidCount = 0, markedCount = 0;
   for (const b of window.BOOKINGS) {
@@ -2061,7 +2061,8 @@ function renderCollectedLine() {
     }
     else if (m.payment_method === 'unpaid') { unpaid += amt; unpaidCount++; }
   }
-  if (!markedCount) { line.textContent = ''; return; }
+  if (!markedCount) { line.textContent = ''; line.style.display = 'none'; return; }
+  line.style.display = '';
   const bits = [\`<strong>Collected \${fmtMoney(collected)}</strong>\`];
   if (cash) bits.push(\`Cash \${fmtMoney(cash)}\`);
   if (payid) bits.push(\`PayID \${fmtMoney(payid)}\`);
