@@ -210,6 +210,11 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return taskDoneHandler(url, env);
     }
+    // Edit a task — update its time and/or note text.
+    if (url.pathname === '/api/tasks/edit' && req.method === 'POST' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return taskEditHandler(req, url, env);
+    }
 
     // SMS / 电话预约：接收 Shortcut 发来的对话文字，AI 整理后建日历
     if (req.method === 'POST' && url.pathname === '/sms-booking' &&
@@ -3506,6 +3511,63 @@ async function taskDoneHandler(url, env) {
   try {
     await dav(env, 'PUT', href, {
       body: editEvent(ics, { DESCRIPTION: [`DESCRIPTION:${icsEsc(newDesc)}`] }),
+      headers: etag ? { 'if-match': etag } : {},
+    });
+  } catch (e) {
+    if (e.status === 412) return jsonResponse({ error: 'event changed elsewhere, try again' }, 409);
+    return jsonResponse({ error: e.message || 'update failed' }, 500);
+  }
+  return jsonResponse({ ok: true });
+}
+
+async function taskEditHandler(req, url, env) {
+  const uid = url.searchParams.get('uid');
+  if (!uid) return jsonResponse({ error: 'uid required' }, 400);
+
+  const cfg = config(env);
+  const body = await req.json();
+  const { date, time_hhmm, note } = body;
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+    return jsonResponse({ error: 'date required (YYYY-MM-DD)' }, 400);
+  if (!time_hhmm || !/^\d{2}:\d{2}$/.test(time_hhmm))
+    return jsonResponse({ error: 'time_hhmm required (HH:MM)' }, 400);
+  if (!note || !String(note).trim())
+    return jsonResponse({ error: 'note required' }, 400);
+
+  const cal = await calendarUrl(env);
+  const now = Date.now();
+  const r = await dav(env, 'REPORT', cal, {
+    depth: 1,
+    body: `${XML_HEAD}<c:calendar-query ${NS}><d:prop><d:getetag/><c:calendar-data/></d:prop>` +
+      `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
+      `<c:time-range start="${utcStamp(now - 400 * 864e5)}" end="${utcStamp(now + 400 * 864e5)}"/>` +
+      `</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+  });
+
+  let href = null, etag = null, ics = null;
+  for (const resp of xmlAll(r.text, 'response')) {
+    const calData = xmlText(xmlOne(resp, 'calendar-data'));
+    if (!calData.includes('BEGIN:VEVENT')) continue;
+    const parsed = parseEvent(calData, cfg.tz);
+    if (parsed.uid === uid) {
+      href = new URL(xmlText(xmlOne(resp, 'href')), cal).href;
+      etag = xmlText(xmlOne(resp, 'getetag')) || null;
+      ics = calData;
+      break;
+    }
+  }
+  if (!href) return jsonResponse({ error: 'event not found for uid ' + uid }, 404);
+
+  const startMs = zonedToUtc(`${date}T${time_hhmm}`, cfg.tz);
+  const changes = {
+    SUMMARY: [`SUMMARY:${icsEsc(String(note).trim())}`],
+    DTSTART: [`DTSTART:${utcStamp(startMs)}`],
+    DTEND: [`DTEND:${utcStamp(startMs + 3600000)}`],
+    DTSTAMP: [`DTSTAMP:${utcStamp(now)}`],
+  };
+  try {
+    await dav(env, 'PUT', href, {
+      body: editEvent(ics, changes),
       headers: etag ? { 'if-match': etag } : {},
     });
   } catch (e) {
