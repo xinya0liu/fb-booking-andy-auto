@@ -4323,7 +4323,8 @@ function mergeNotes(old, newLines, note) {
 
 function buildSummary(name, service, price) {
   const svc = service || 'AC Service';
-  return `${svc}${price ? ` ${price}` : ''} – ${name}`;
+  const p = price ? (String(price).startsWith('$') ? price : `$${price}`) : '';
+  return `${svc}${p ? ` ${p}` : ''} – ${name}`;
 }
 
 const WD_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
