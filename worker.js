@@ -1748,10 +1748,6 @@ async function printPage(env, origin, dateParam = '') {
       // (not by paid_at — which is just when Andy clicked the mark modal).
       service_date_ms: e.startMs || null,
     });
-    // Suggested gas from vehicles DB (only when AI tagged structured fields)
-    const gasSug = await suggestGasFor(env, {
-      make: e.veh_make, model: e.veh_model, year: e.veh_year, variant: e.veh_variant,
-    });
     // Show user notes (📌) and AI notes (🤖) stacked under the service.
     // Print stylesheet hides the 🤖 line to keep paper compact.
     const notesHtml = [];
@@ -1765,7 +1761,6 @@ async function printPage(env, origin, dateParam = '') {
       <td class="svc">${serviceCell}</td>
       <td class="price">${price}</td>
       <td class="veh">${vehicle}</td>
-      <td class="gas">${gasSug}</td>
       <td class="addr">${addr.street || addr.suburb ? addrHtml : ''}</td>
       <td class="who">${whoHtml}</td>
       <td class="mark" id="mark-${i}"></td>
@@ -1790,7 +1785,7 @@ async function printPage(env, origin, dateParam = '') {
   <table>
     <thead><tr>
       <th class="col-n">#</th><th class="col-src">Src</th><th class="col-time">Time</th>
-      <th>Service</th><th>Price</th><th>Vehicle</th><th class="col-gas">Gas</th><th>Address</th><th>Customer</th>
+      <th>Service</th><th>Price</th><th>Vehicle</th><th>Address</th><th>Customer</th>
       <th class="col-mark">Mark</th>
     </tr></thead>
     <tbody>${rows}</tbody>
@@ -1853,8 +1848,6 @@ async function printPage(env, origin, dateParam = '') {
   td.who .who-mobile-only { display: block; color: #111; }
   /* Mark column (post-service status badge) */
   th.col-mark { width: 100px; }
-  th.col-gas { width: 70px; }
-  td.gas { white-space: nowrap; color: #060; font-size: 0.9em; }
   td.mark { white-space: nowrap; font-size: 0.85em; text-align: right; }
   td.mark .badge-done   { display: inline-block; padding: 2px 6px; border-radius: 3px; background: #efe; color: #060; border: 1px solid #9c9; font-weight: bold; }
   td.mark .badge-partial{ display: inline-block; padding: 2px 6px; border-radius: 3px; background: #fef3dc; color: #7a4a00; border: 1px solid #e0a040; font-weight: bold; }
