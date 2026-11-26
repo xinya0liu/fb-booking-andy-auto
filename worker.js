@@ -2462,7 +2462,7 @@ function validateVehicle(v) {
   const ys = Number(v.year_start), ye = Number(v.year_end);
   if (!Number.isInteger(ys) || ys < 1950 || ys > 2100) errors.push('year_start 1950-2100');
   if (!Number.isInteger(ye) || ye < ys || ye > 2100) errors.push('year_end must be >= year_start and <= 2100');
-  if (!v.refrigerant || !/^R134a$|^R12$/i.test(String(v.refrigerant).trim())) errors.push('refrigerant must be R134a or R12');
+  if (!v.refrigerant || !/^R134a$|^R1234yf$|^R12$/i.test(String(v.refrigerant).trim())) errors.push('refrigerant must be R134a, R1234yf, or R12');
   const cg = Number(v.charge_g);
   if (!Number.isFinite(cg) || cg <= 0 || cg > 5000) errors.push('charge_g 1-5000');
   return errors;
