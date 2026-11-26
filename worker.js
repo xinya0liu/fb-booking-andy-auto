@@ -4110,12 +4110,17 @@ async function vehiclesApi(req, env) {
       where.push('(? BETWEEN year_start AND year_end)');
       binds.push(year);
     }
-    const limitParam = url.searchParams.get('limit');
-    const limit = limitParam && /^\d+$/.test(limitParam) ? Math.min(Number(limitParam), 1000) : null;
-    const sql = `SELECT * FROM vehicles ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ` +
-      `ORDER BY make COLLATE NOCASE, model COLLATE NOCASE, year_start${limit ? ` LIMIT ${limit}` : ''}`;
-    const { results } = await env.DB.prepare(sql).bind(...binds).all();
-    return jsonResponse({ vehicles: results });
+    const pageSize = 50;
+    const pageParam = url.searchParams.get('page');
+    const page = pageParam && /^\d+$/.test(pageParam) ? Math.max(1, Number(pageParam)) : 1;
+    const offset = (page - 1) * pageSize;
+    const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const [{ results }, { results: countRows }] = await Promise.all([
+      env.DB.prepare(`SELECT * FROM vehicles ${whereSql} ORDER BY make COLLATE NOCASE, model COLLATE NOCASE, year_start LIMIT ${pageSize} OFFSET ${offset}`).bind(...binds).all(),
+      env.DB.prepare(`SELECT COUNT(*) AS n FROM vehicles ${whereSql}`).bind(...binds).all(),
+    ]);
+    const total = countRows[0]?.n ?? 0;
+    return jsonResponse({ vehicles: results, total, page, pageSize });
   }
 
   if (req.method === 'POST') {
