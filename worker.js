@@ -4110,8 +4110,10 @@ async function vehiclesApi(req, env) {
       where.push('(? BETWEEN year_start AND year_end)');
       binds.push(year);
     }
+    const limitParam = url.searchParams.get('limit');
+    const limit = limitParam && /^\d+$/.test(limitParam) ? Math.min(Number(limitParam), 1000) : null;
     const sql = `SELECT * FROM vehicles ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ` +
-      `ORDER BY make COLLATE NOCASE, model COLLATE NOCASE, year_start`;
+      `ORDER BY make COLLATE NOCASE, model COLLATE NOCASE, year_start${limit ? ` LIMIT ${limit}` : ''}`;
     const { results } = await env.DB.prepare(sql).bind(...binds).all();
     return jsonResponse({ vehicles: results });
   }
