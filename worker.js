@@ -2971,11 +2971,20 @@ async function bookingsUnpaidHandler(env, url) {
   const today = todayInTz(cfg.tz);
   const todayStartMs = zonedToUtc(`${today.y}-${pad(today.m)}-${pad(today.d)}T00:00:00`, cfg.tz);
 
+  // asOf lets the admin preview what "collect payment" looks like on a future
+  // date (e.g. the user navigates to tomorrow before it arrives).
+  const asOfParam = url.searchParams.get('asOf');
+  let cutoffMs = todayStartMs;
+  if (asOfParam && /^\d{4}-\d{2}-\d{2}$/.test(asOfParam)) {
+    const [ay, am, ad] = asOfParam.split('-').map(Number);
+    cutoffMs = zonedToUtc(`${ay}-${pad(am)}-${pad(ad)}T00:00:00`, cfg.tz);
+  }
+
   const { results } = await env.DB.prepare(
     `SELECT * FROM bookings_meta
      WHERE status = 'done' AND payment_method = 'unpaid'
        AND service_date_ms IS NOT NULL AND service_date_ms < ?`
-  ).bind(todayStartMs).all();
+  ).bind(cutoffMs).all();
 
   if (!results.length) return jsonResponse({ count: 0, bookings: [] });
 
