@@ -194,6 +194,11 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return bookingsUnpaidHandler(env, url);
     }
+    // Record a deposit for a repair job without touching the main payment/status.
+    if (url.pathname === '/api/bookings/deposit' && req.method === 'POST' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return bookingsDepositHandler(req, url, env);
+    }
     // Fetch a single booking by UID — used by admin to show linked-job banners.
     if (url.pathname === '/api/bookings/uid' && req.method === 'GET' &&
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
@@ -2961,6 +2966,33 @@ async function bookingsSearchHandler(env, url) {
     count: matches.length,
     bookings: matches.slice(0, limit),
   });
+}
+
+// /api/bookings/deposit — record a deposit amount+method for a repair job.
+// Only touches deposit_amount and deposit_method; leaves status/payment alone.
+async function bookingsDepositHandler(req, url, env) {
+  if (!env.DB) return jsonResponse({ error: 'D1 binding missing' }, 500);
+  const uid = url.searchParams.get('uid');
+  if (!uid) return jsonResponse({ error: 'uid required' }, 400);
+  const body = await req.json();
+  const dollarsToCents = v => {
+    if (v === undefined || v === '' || v === null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) && Math.abs(n) < 1e8 ? Math.round(n * 100) : null;
+  };
+  const depositAmount = dollarsToCents(body.deposit_amount);
+  const depositMethod = body.deposit_method && ['cash', 'payid'].includes(body.deposit_method)
+    ? body.deposit_method : null;
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare(
+    `INSERT INTO bookings_meta (calendar_uid, deposit_amount, deposit_method, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(calendar_uid) DO UPDATE SET
+       deposit_amount = excluded.deposit_amount,
+       deposit_method = excluded.deposit_method,
+       updated_at = excluded.updated_at`
+  ).bind(uid, depositAmount, depositMethod, now).run();
+  return jsonResponse({ ok: true });
 }
 
 // /api/bookings/unpaid — bookings marked done+unpaid whose service date is
