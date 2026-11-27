@@ -189,6 +189,11 @@ export default {
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
       return bookingsSearchHandler(env, url);
     }
+    // Unpaid bookings from previous days — shown as "collect payment" reminder.
+    if (url.pathname === '/api/bookings/unpaid' && req.method === 'GET' &&
+        url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
+      return bookingsUnpaidHandler(env, url);
+    }
     // Fetch a single booking by UID — used by admin to show linked-job banners.
     if (url.pathname === '/api/bookings/uid' && req.method === 'GET' &&
         url.searchParams.get('secret') === (env.VERIFY_TOKEN || '')) {
@@ -2956,6 +2961,84 @@ async function bookingsSearchHandler(env, url) {
     count: matches.length,
     bookings: matches.slice(0, limit),
   });
+}
+
+// /api/bookings/unpaid — bookings marked done+unpaid whose service date is
+// before today. Admin shows these as a "collect payment" reminder on Today.
+async function bookingsUnpaidHandler(env, url) {
+  if (!env.DB) return jsonResponse({ count: 0, bookings: [] });
+  const cfg = config(env);
+  const today = todayInTz(cfg.tz);
+  const todayStartMs = zonedToUtc(`${today.y}-${pad(today.m)}-${pad(today.d)}T00:00:00`, cfg.tz);
+
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM bookings_meta
+     WHERE status = 'done' AND payment_method = 'unpaid'
+       AND service_date_ms IS NOT NULL AND service_date_ms < ?`
+  ).bind(todayStartMs).all();
+
+  if (!results.length) return jsonResponse({ count: 0, bookings: [] });
+
+  // Group UIDs by local service date so we batch CalDAV fetches per day.
+  const metaByUid = {};
+  const byDate = new Map();
+  for (const r of results) {
+    metaByUid[r.calendar_uid] = r;
+    const lp = localParts(r.service_date_ms, cfg.tz);
+    const key = `${lp.y}-${pad(lp.m)}-${pad(lp.d)}`;
+    if (!byDate.has(key)) byDate.set(key, []);
+    byDate.get(key).push(r.calendar_uid);
+  }
+
+  const bookings = [];
+  for (const [dateStr, uids] of byDate) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const events = await findTomorrowBookings(env, cfg, { target: { y, m, d } });
+    const uidSet = new Set(uids);
+    for (const e of events) {
+      if (!uidSet.has(e.uid)) continue;
+      const desc = e.description || '';
+      const summaryParsed = parseSummaryFields(e.summary || '');
+      const descService = desc.match(/^Service:\s*(.+)$/im)?.[1]?.trim() || '';
+      const service = summaryParsed.service || descService || e.service || '';
+      const price = summaryParsed.price || e.price || '';
+      const vehicle = desc.match(/^Vehicle:\s*(.+)$/im)?.[1]?.trim()
+        || summaryParsed.vehicle || e.vehicle || '';
+      const mobile = desc.match(/^Mobile:\s*(.+)$/im)?.[1]?.trim() || '';
+      const aiNotes = desc.match(/^AI notes:\s*(.+)$/im)?.[1]?.trim() || '';
+      const descNoAi = desc.replace(/^AI notes:.*$/gim, '');
+      const userNotes = descNoAi.match(/^Notes:\s*(.+)$/im)?.[1]?.trim() || '';
+      const parentUid = desc.match(/^Follow-up of:\s*(.+)$/im)?.[1]?.trim() || '';
+      const lp = localParts(e.startMs, cfg.tz);
+      const clock = `${lp.h % 12 || 12}:${pad(lp.min)}${lp.h < 12 ? 'am' : 'pm'}`;
+      const priceNum = parseInt(String(price).replace(/[^\d]/g, ''), 10);
+      const durationMin = e.startMs && e.endMs ? Math.round((e.endMs - e.startMs) / 60000) : null;
+      bookings.push({
+        uid: e.uid || '',
+        type: 'booking',
+        task_done: false,
+        psid: e.psid || '',
+        source: e.psid ? 'fb' : 'sms',
+        time: clock,
+        start_ms: e.startMs,
+        end_ms: e.endMs,
+        duration_min: durationMin,
+        name: (e.name || '').trim(),
+        phone: mobile,
+        service, price,
+        quoted_cents: priceNum > 0 ? priceNum * 100 : 0,
+        vehicle,
+        address: e.location || '',
+        ai_notes: aiNotes,
+        notes: userNotes,
+        parent_uid: parentUid || null,
+        meta: metaByUid[e.uid] || null,
+      });
+    }
+  }
+
+  bookings.sort((a, b) => b.start_ms - a.start_ms);
+  return jsonResponse({ count: bookings.length, bookings });
 }
 
 // Normalise an AU mobile string to a canonical key so "+61478701289",
